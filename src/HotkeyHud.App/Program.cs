@@ -48,6 +48,12 @@ internal static class Program
                     options.Out ?? Path.Combine(Path.GetTempPath(), "hotkeyhud-gallery"));
             }
 
+            if (options.SuppressionTest)
+            {
+                return SuppressionTest.Run(
+                    options.Out ?? Path.Combine(Path.GetTempPath(), "hotkeyhud-suppression"));
+            }
+
             if (options.Demo)
             {
                 return RunDemo(options.Capture);
@@ -105,7 +111,7 @@ internal static class Program
 
     private sealed record Options(
         bool SelfTest, bool TypingTest, bool IntegrationTest, bool RenderGallery,
-        bool Demo, int Seconds, string? Capture, string? Out);
+        bool SuppressionTest, bool Demo, int Seconds, string? Capture, string? Out);
 
     private static Options ParseOptions(string[] args)
     {
@@ -113,6 +119,7 @@ internal static class Program
         bool typingTest = false;
         bool integrationTest = false;
         bool renderGallery = false;
+        bool suppressionTest = false;
         bool demo = false;
         int seconds = 30;
         string? capture = null;
@@ -140,6 +147,11 @@ internal static class Program
                 case "--render-gallery":
                     RequireDiagnosticsBuild(arg);
                     renderGallery = true;
+                    break;
+
+                case "--suppression-test":
+                    RequireDiagnosticsBuild(arg);
+                    suppressionTest = true;
                     break;
 
                 case "--demo":
@@ -181,7 +193,7 @@ internal static class Program
                     {
                         throw new ArgumentException(
                             $"未知参数 \"{arg}\"。可用：--selftest --typing-test --integration-test "
-                            + "--render-gallery --demo --seconds=N --capture=PATH --out=DIR"
+                            + "--render-gallery --suppression-test --demo --seconds=N --capture=PATH --out=DIR"
                             + "（注意值必须用 = 连接）");
                     }
 
@@ -189,7 +201,7 @@ internal static class Program
             }
         }
 
-        return new Options(selfTest, typingTest, integrationTest, renderGallery, demo, seconds, capture, output);
+        return new Options(selfTest, typingTest, integrationTest, renderGallery, suppressionTest, demo, seconds, capture, output);
     }
 
     /// <summary>只接受 <c>--name=value</c>；空格分隔形式一律落到「未知参数」分支报错。</summary>

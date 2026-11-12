@@ -46,6 +46,7 @@ src/HotkeyHud.App/
   Platform/RawInputSource.cs  Raw Input 采集；同时是全程序唯一的时钟来源（NowMs）
   Platform/ForegroundWatcher.cs  前台窗口变化监听（SetWinEventHook）
   Platform/ForegroundProbe.cs    前台进程名查询（缓存 + Invalidate）
+  Platform/SuppressionProbe.cs   §2.1 六个抑制信号采集（QUNS / 矩形 / 样式 / 类名 / 进程）
   UI/OverlayForm.cs           分层覆盖窗：窗口、DIB、分层合成
   UI/HudPanel.cs              面板布局与绘制（不碰 HWND），尺寸按内容算
   Data/apps/*.json            5 份应用档案，随 exe 输出
@@ -78,19 +79,22 @@ dotnet run --project src/HotkeyHud.App -- --integration-test
 # ③ S3 渲染验收：输出 4 张面板截图 + 断言高亮不改尺寸、渲染 p95
 dotnet run --project src/HotkeyHud.App -- --render-gallery --out=<目录>
 
-# ④ S1 回归门禁：覆盖窗四条硬指标 + Raw Input 通路 + 内存三口径
+# ④ S4 抑制验收：真机开全屏窗口，验证不弹面板 + 采集开销
+dotnet run --project src/HotkeyHud.App -- --suppression-test --out=<目录>
+
+# ⑤ S1 回归门禁：覆盖窗四条硬指标 + Raw Input 通路 + 内存三口径
 dotnet run --project src/HotkeyHud.App -- --selftest
 
-# ⑤ 进程内输入通路冒烟（跨进程真实键盘打字待人工复核，见「偏差」）
+# ⑥ 进程内输入通路冒烟（跨进程真实键盘打字待人工复核，见「偏差」）
 dotnet run --project src/HotkeyHud.App -- --typing-test --seconds=60
 ```
 
 全部以退出码表示失败数（0 = 全部通过）。`--selftest` / `--integration-test` / `--render-gallery` /
-`--typing-test` / `--demo` 只在 Debug 构建存在，Release 下传入会以退出码 2 报错；未知参数与
-空格分隔的 `--capture path` 同样报错退出，不会静默忽略。
+`--suppression-test` / `--typing-test` / `--demo` 只在 Debug 构建存在，Release 下传入会以退出码 2
+报错；未知参数与空格分隔的 `--capture path` 同样报错退出，不会静默忽略。
 
-**`--integration-test` 会抢前台**：它自己创建测试窗口并 `SetForegroundWindow`，运行期间不要操作电脑，
-否则用例会以「无法把目标窗口切到前台」失败。
+**`--integration-test` 与 `--suppression-test` 会抢前台**：它们自己创建窗口并 `SetForegroundWindow`，
+运行期间不要操作电脑，否则用例会以「无法把目标窗口切到前台」失败。
 
 ### 时钟唯一来源
 
@@ -179,6 +183,15 @@ $ dotnet run --project src/HotkeyHud.App -- --render-gallery --out=<目录>
 [PASS] Gallery07 首帧 <25ms、高亮切换 <8ms — 首帧全量 p95 = 9.13 ms（< 25，32 次）；高亮切换 p95 = 1.06 ms（< 8，40 次）
 --- 通过 7，失败 0 ---
 
+$ dotnet run --project src/HotkeyHud.App -- --suppression-test --out=<目录>
+[PASS] S4-1 普通窗口不抑制 — 面板正常弹出，GameSuppressed=False
+[PASS] S4-2 无边框全屏抑制 — 面板未弹出；QUNS=2，命中原因="D1 系统报告独占全屏 / 演示模式"
+[PASS] S4-3 切回普通窗口后恢复 — 退出全屏后抑制解除，面板正常弹出
+[PASS] S4-4 D1 优先于 D5（关掉 D5 仍被抑制） — QUNS=2，原因="D1 …"；D5 在本机不会独立触发
+[PASS] S4-5 单次采集 p95 < 5ms — p95 = 0.42 ms（含 OpenProcess，100 次）
+[PASS] S4-6 空闲 10 秒 CPU 增量 < 100ms — CPU 增量 31.2 ms（含 2 秒轮询，共 5 次采集）
+--- 通过 6，失败 0 ---
+
 $ dotnet run --project src/HotkeyHud.App -- --selftest
 [PASS] 性能-空载内存三口径 — 私有工作集 5.9 MB / 提交大小 9.3 MB / 总工作集 35.2 MB
 [PASS] S1-A1 Raw Input 通路 — F24 按下=True 松开=True，共收到 600 个事件
@@ -200,7 +213,8 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 | 空闲 10s CPU 增量 | < 100 ms | 15.6 ms |
 | 面板全量重绘 p95 | < 25 ms | 9.13 ms（32 次采样） |
 | 面板高亮切换 p95 | < 8 ms | 1.06 ms（40 次采样） |
-| 12 条面板高度 | ≤ 260 逻辑 px | 248 逻辑 px |
+| 12 条面板高度 | ≤ 300 逻辑 px | 300 逻辑 px（见「偏差」12） |
+| 单次抑制采集 p95 | < 5 ms | 0.42 ms（含 OpenProcess，100 次） |
 | 按键到首帧 | ≤ 120 ms | 未打点（含 dwell 300ms + 首帧渲染） |
 | 常驻句柄 | ≤ 500 | 未测（S5 托盘完成后测） |
 
@@ -229,6 +243,7 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 | 高亮时把 bounds 撑宽 4px | 画廊 Gallery06 FAIL（GetWindowRect 1080→1088） |
 | 打包行数 +1（模拟回到每组换行） | 画廊 Gallery05 FAIL（274 逻辑 px > 260） |
 | 键帽不省略修饰键 | 画廊 Gallery05 FAIL（KeycapText 断言） |
+| 只给第一组加组名（模拟无组名续列） | 画廊 Gallery05 FAIL（列首 导航 / (无组名) / (无组名)） |
 | S1：`UpdateLayeredWindow` 尺寸改 300×300 | S1-E FAIL，退出码 1 |
 
 > 注意：变异之间会互相掩盖。同时删掉「非修饰键取消」和「前台清空非修饰键」时，Case15 反而通过——
@@ -257,9 +272,15 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 9. **高亮竖条画在命中格子的左缘，不是面板左缘**：3 列布局下一行有 3 个条目，画在面板边缘会让人
    分不清命中的是哪一个。行背景提亮仍按 §6.1 铺满整行。
 10. **DPI 取系统 DPI（进程默认 SystemAware）**：Per-Monitor V2 与跨屏翻转定位属 §6 增强项，留 S6。
-11. **列内流式多加一条约束：组名不得落在列底**（超出 §6.1 原始算法）。原始算法下 Chrome 面板的
-    「网页」组名会停在第 2 列最后一行，它的 4 条却全在第 3 列顶部，会被读成上一组的条目。
-    现在的做法是让该组名从下一列开头起，列内格数允许不齐；行数按最长一列算。
+11. **列内流式多加一条约束：组名不得落在列底**（S3.5 时的临时做法，已被 §6.1 v1.2 取代）。
+12. **组块不可跨列把 12 条面板从 248 顶到 300 逻辑 px**：VS Code 面板最长的一组是「编辑」
+    （组名 + 7 条 = 8 格），组块不可拆 → 该组独占一列 → 整列 8 行。另两列各 4 行留白。
+    **这与 S3.5 的「≤260 逻辑 px」冲突，260 在组块不可跨列下不可达**（详见 [SPEC-GAP] 11）。
+    可选的三种排布实测值：列内流式（组可跨列）248 / 组块不可跨列 + 「（续）」274 / 组块严格不可跨列 300。
+13. **D1 在真机上先于 D5 命中**：任何铺满屏幕的窗口（含无边框）都会让 `SHQueryUserNotificationState`
+    返回 2（忙），于是 D1 先命中，`TreatBorderlessFullscreenAsGame` 永远轮不到。
+    D5 的开关因此只能在单元层验证（Case14 扩了这对断言），真机形态不可达。这不是实现问题，
+    是 Windows 的 QUNS 语义——但它意味着 §2.2 的 D5 实际上是死规则。
 
 非偏差，但需要记录的实现决定：
 
@@ -291,8 +312,11 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 | 6 | §3.1 | 未定义档案 JSON 损坏时的行为 | 跳过该档案并记入 `LoadErrors`，不让一份坏文件把程序拖垮；错误不静默 |
 | 7 | §5.3.2 | 只给了 `DwellMs` 的范围 80–5000，未说越界怎么处理；`FlashMs` 干脆没给范围 | 两者都按 80–5000 校验，越界抛 `ArgumentOutOfRangeException`（构造与赋值都校验） |
 | 8 | §6 | 原 §6 只有数据契约，没有任何视觉规格（圆角、底色、键帽、列数、条目上限） | S3 验收时已补录为 **§6.1 视觉规格（v1.1）**，本实现以它为唯一来源 |
-| 9 | §6.1 列内流式 | 算法只说「组名占一格，填满当前列后换列」，没说组名恰好落在列底时怎么办 | 加一条约束：组名不得落在列底，否则从下一列开头起（见「偏差」11） |
+| 9 | §6.1 列内流式 | 算法只说「组名占一格，填满当前列后换列」，没说组名恰好落在列底时怎么办 | v1.2 已改为「组块不可跨列」，此缺口关闭 |
 | 10 | §6「UI 层不得自行过滤」 vs 12 条上限 | 「最多 12 条」必然要在某处截断，与「UI 不得过滤」字面冲突；`HudBuilder` 又被 S3 §2.3 禁止改动 | 截断放在渲染层 `HudPanel`，`HudModel.TotalCount` 保持完整，底部按 `TotalCount - 12` 显示「还有 N 个未显示」 |
+| 11 | §6.1 v1.2「组块不可跨列」 vs S3.5「≤260 逻辑 px」 | 两条要求互斥：12 条 + 4 组时最长组 8 格，组块不可拆 → 必须占满 8 行 → 300 px。**当前实现按 v1.2 走（300 px）**，260 那条已随之失效 | 待你裁决：接受 300 / 允许「（续）」换到 274 / 回到列内流式 248 |
+| 12 | §2.1 `GameRules.ExtraProcessNames` | S4 提示词写的是 `ExtraProcessNames`，但 S2 锁定的契约字段名是 `GameProcessNames`，且 S4 禁止改 `GameClassifier` | 保留 `GameProcessNames`，不新增同义字段 |
+| 13 | §2.2 D5 与 D1 的关系 | 真机实测任何铺满屏幕的窗口都让 QUNS 报 2，D1 先命中，D5 不会独立触发 | 不改判定顺序（§2.2 明确 D1 在前），D5 开关改用单元断言覆盖 |
 
 ## 进度
 
@@ -302,6 +326,6 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 | S2 四条规则 | 通过（15/15 用例，含 4 项整改） |
 | S2.5 状态机接线 | 通过（集成 10/10，含 2 项整改） |
 | S3 数据与渲染 | 通过（含 1 项整改） |
-| S3.5 布局修正 | 完成（键帽省略修饰键 / 列内流式 / 底色 96%，12 条面板 248 逻辑 px） |
-| S4 游戏抑制接入 | 未开始 |
+| S3.5 布局修正 | 通过（键帽省略修饰键 / 组块不可跨列 / 底色不透明） |
+| S4 游戏抑制接入 | 完成（真机 6/6，采集 p95 0.42 ms，空闲 CPU 31.2 ms） |
 | S5 工程化 | 未开始 |

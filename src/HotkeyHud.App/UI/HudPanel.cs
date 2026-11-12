@@ -42,8 +42,12 @@ internal static class HudPanel
     private const float ScreenMargin = 40f;
     private const float EmptyBodyHeight = 44f;
 
+    /// <summary>组块超过这个高度才允许拆分并加「（续）」。超过它面板会高得离谱。</summary>
+    private const int MaxRowsBeforeSplit = 8;
+
     // 规格 §6.1 色值
-    private static readonly Color PanelBackground = Color.FromArgb(245, 0x16, 0x18, 0x1D); // 96%
+    // 规格 §6.1 v1.2：面板完全不透明。无背景模糊时，半透明只产生穿透噪声、不产生美感收益
+    private static readonly Color PanelBackground = Color.FromArgb(255, 0x16, 0x18, 0x1D);
     private static readonly Color TextPrimary = Color.FromArgb(255, 255, 255, 255);
     private static readonly Color TextSecondary = Color.FromArgb(140, 255, 255, 255); // 55%
 
@@ -120,15 +124,14 @@ internal static class HudPanel
         int width = (int)Math.Min(BaseWidth * scale, workAreaWidth * WorkAreaRatio);
         float height = PadY * 2 + HeaderHeight + HeaderGap;
 
-        List<Cell> cells = BuildCells(model);
-        if (cells.Count == 0)
+        List<Block> blocks = BuildBlocks(model);
+        if (blocks.Count == 0)
         {
             height += EmptyBodyHeight;
         }
         else
         {
-            // 打包后实际行数可能比 ceil(格数/3) 多一行（组名让位），高度必须按实际行数算
-            height += PackedRows(cells) * RowHeight + FooterHeight;
+            height += PackedRows(blocks) * RowHeight + FooterHeight;
         }
 
         return new Size(width, (int)Math.Ceiling(height * scale));
@@ -175,16 +178,16 @@ internal static class HudPanel
 
         float y = padY + HeaderHeight * scale + HeaderGap * scale;
 
-        List<Cell> cells = BuildCells(model);
-        if (cells.Count == 0)
+        List<Block> blocks = BuildBlocks(model);
+        if (blocks.Count == 0)
         {
             DrawEmptyBody(graphics, model, scale, padX, y, contentWidth);
             return Array.Empty<PlacedItem>();
         }
 
         var placed = new List<PlacedItem>(MaxVisibleItems);
-        int rows = PackedRows(cells);
-        DrawCells(graphics, PackColumns(cells, RowsOf(cells.Count)), scale, padX, y, contentWidth, placed);
+        int rows = PackedRows(blocks);
+        DrawCells(graphics, PackColumns(blocks, rows), scale, padX, y, contentWidth, placed);
 
         DrawFooter(graphics, model, scale, padX, y + rows * RowHeight * scale, contentWidth);
         return placed;
@@ -222,6 +225,31 @@ internal static class HudPanel
         int index = keys.LastIndexOf('+');
         string key = index >= 0 ? keys[(index + 1)..] : keys;
         return KeyAbbreviations.TryGetValue(key, out string? shortName) ? shortName : key;
+    }
+
+    /// <summary>
+    /// 每一列最顶上的那个元素是什么：组名，或 null（单组模型不显示组名）。
+    /// §6.1 v1.2 要求「不存在无组名的续列」，验收直接断言这个返回值。
+    /// </summary>
+    public static IReadOnlyList<string?> ColumnLeaders(HudModel model)
+    {
+        List<Block> blocks = BuildBlocks(model);
+        if (blocks.Count == 0)
+        {
+            return Array.Empty<string?>();
+        }
+
+        List<Cell>[] columns = PackColumns(blocks, PackedRows(blocks));
+        var leaders = new List<string?>(Columns);
+        foreach (List<Cell> column in columns)
+        {
+            if (column.Count > 0)
+            {
+                leaders.Add(column[0].GroupTitle);
+            }
+        }
+
+        return leaders;
     }
 
     // ---------------- 头部 ----------------
@@ -347,14 +375,14 @@ internal static class HudPanel
     // ---------------- 规划与度量 ----------------
 
     /// <summary>
-    /// 把模型摊平成一串单元格：组名一格 + 该组条目各一格。
+    /// 把模型切成「组块」：组名 + 该组条目是一个不可分的整体（§6.1 v1.2 组块不可跨列）。
     /// 条目总数受 <see cref="MaxVisibleItems"/> 限制，组名不计入上限。
     /// </summary>
-    private static List<Cell> BuildCells(HudModel model)
+    private static List<Block> BuildBlocks(HudModel model)
     {
         bool showTitle = model.Groups.Count > 1;
         int remaining = MaxVisibleItems;
-        var cells = new List<Cell>(MaxVisibleItems + model.Groups.Count);
+        var blocks = new List<Block>(model.Groups.Count);
 
         foreach (HudGroup group in model.Groups)
         {
@@ -375,64 +403,157 @@ internal static class HudPanel
                 remaining--;
             }
 
-            if (items.Count == 0)
+            if (items.Count > 0)
             {
-                continue;
-            }
-
-            if (showTitle)
-            {
-                cells.Add(Cell.Title(group.Title));
-            }
-
-            foreach (HudItem item in items)
-            {
-                cells.Add(Cell.Entry(item));
+                blocks.Add(new Block(showTitle ? group.Title : null, items));
             }
         }
 
-        return cells;
+        return SplitOversized(blocks);
     }
 
     /// <summary>
-    /// 列内流式打包：先填满第 1 列再换列。
-    /// <para>
-    /// 比 §6.1 的原始算法多一条约束：**组名不得落在列底**。否则组名留在上一列末尾、
-    /// 它的条目全在下一列顶部，会被读成上一组的条目（实测 Chrome 面板的「网页」组就是这样）。
-    /// 遇到这种情况让该组名从下一列开头起，列内格数允许不齐。
-    /// </para>
+    /// 组块高到会让面板异常高时才拆开，续块加「（续）」（§6.1 v1.2 的兜底条款）。
+    /// 常规数据（每组 ≤ 8 格）走不到这里。
     /// </summary>
-    private static List<Cell>[] PackColumns(List<Cell> cells, int rows)
+    private static List<Block> SplitOversized(List<Block> blocks)
     {
-        var columns = new List<Cell>[Columns];
-        int index = 0;
+        var result = new List<Block>(blocks.Count);
 
-        for (int column = 0; column < Columns; column++)
+        foreach (Block block in blocks)
         {
-            var bucket = new List<Cell>(rows);
-            while (index < cells.Count && bucket.Count < rows)
+            if (block.Height <= MaxRowsBeforeSplit || block.Title is null)
             {
-                // 组名若将落在本列最后一行，且后面还有条目，就把它挪到下一列开头
-                bool orphanTitle = cells[index].GroupTitle is not null
-                                   && bucket.Count == rows - 1
-                                   && index + 1 < cells.Count;
-                if (orphanTitle)
-                {
-                    break;
-                }
-
-                bucket.Add(cells[index]);
-                index++;
+                result.Add(block);
+                continue;
             }
 
-            columns[column] = bucket;
+            // 首块要留一格给组名，续块也要留一格给「（续）」
+            int index = 0;
+            string title = block.Title;
+            while (index < block.Items.Count)
+            {
+                int capacity = MaxRowsBeforeSplit - 1;
+                var chunk = block.Items.Skip(index).Take(capacity).ToArray();
+                result.Add(new Block(title, chunk));
+                index += chunk.Length;
+                title = block.Title + "（续）";
+            }
         }
 
-        // 极端情况下（组特别多）3 列装不下，把剩下的都塞进最后一列，宁可溢出也不丢内容
-        while (index < cells.Count)
+        return result;
+    }
+
+    /// <summary>
+    /// 组块按顺序装列：当前列装不下整块就整块换列，**绝不把一个组拆到两列**。
+    /// 列数超过 3 时抬高目标高度重试，直到能装下。
+    /// </summary>
+    private static List<Block>[] PackBlocks(List<Block> blocks, int capacity)
+    {
+        var columns = new List<Block>[Columns];
+        for (int i = 0; i < Columns; i++)
         {
-            columns[^1].Add(cells[index]);
-            index++;
+            columns[i] = new List<Block>();
+        }
+
+        int column = 0;
+        int used = 0;
+        foreach (Block block in blocks)
+        {
+            if (used > 0 && used + block.Height > capacity)
+            {
+                column++;
+                used = 0;
+            }
+
+            if (column >= Columns)
+            {
+                // 装不下：交给 PackedRows 抬高 capacity 后重试
+                break;
+            }
+
+            columns[column].Add(block);
+            used += block.Height;
+        }
+
+        return columns;
+    }
+
+    /// <summary>打包后真正占用的行数（= 最长一列的格数）。</summary>
+    private static int PackedRows(List<Block> blocks)
+    {
+        if (blocks.Count == 0)
+        {
+            return 0;
+        }
+
+        int total = 0;
+        foreach (Block block in blocks)
+        {
+            total += block.Height;
+        }
+
+        int capacity = RowsOf(total);
+        while (true)
+        {
+            List<Block>[] columns = PackBlocks(blocks, capacity);
+            int placed = 0;
+            int rows = 0;
+            foreach (List<Block> column in columns)
+            {
+                int height = 0;
+                foreach (Block block in column)
+                {
+                    height += block.Height;
+                    placed += block.Height;
+                }
+
+                rows = Math.Max(rows, height);
+            }
+
+            if (placed == total)
+            {
+                return rows;
+            }
+
+            capacity++;
+        }
+    }
+
+    private static List<Cell>[] PackColumns(List<Block> blocks, int rows)
+    {
+        var columns = new List<Cell>[Columns];
+        for (int i = 0; i < Columns; i++)
+        {
+            columns[i] = new List<Cell>();
+        }
+
+        int column = 0;
+        int used = 0;
+        foreach (Block block in blocks)
+        {
+            if (used > 0 && used + block.Height > rows)
+            {
+                column++;
+                used = 0;
+            }
+
+            if (column >= Columns)
+            {
+                break;
+            }
+
+            if (block.Title is not null)
+            {
+                columns[column].Add(Cell.Title(block.Title));
+                used++;
+            }
+
+            foreach (HudItem item in block.Items)
+            {
+                columns[column].Add(Cell.Entry(item));
+                used++;
+            }
         }
 
         return columns;
@@ -440,24 +561,6 @@ internal static class HudPanel
 
     private static int RowsOf(int cellCount)
         => cellCount == 0 ? 0 : (cellCount + Columns - 1) / Columns;
-
-    /// <summary>打包后真正占用的行数（= 最长一列的格数）。</summary>
-    private static int PackedRows(List<Cell> cells)
-    {
-        if (cells.Count == 0)
-        {
-            return 0;
-        }
-
-        List<Cell>[] columns = PackColumns(cells, RowsOf(cells.Count));
-        int rows = 0;
-        foreach (List<Cell> column in columns)
-        {
-            rows = Math.Max(rows, column.Count);
-        }
-
-        return rows;
-    }
 
     private static Font FontOf(float pixelSize)
     {
@@ -489,12 +592,18 @@ internal static class HudPanel
         return path;
     }
 
-    /// <summary>列内流式排布的基本单位：要么是组名，要么是一个条目。</summary>
+    /// <summary>列内排布的基本单位：要么是组名，要么是一个条目。</summary>
     private readonly record struct Cell(string? GroupTitle, HudItem? Item)
     {
         public static Cell Title(string title) => new(title, null);
 
         public static Cell Entry(HudItem item) => new(null, item);
+    }
+
+    /// <summary>不可跨列的整体：组名 + 该组条目。<c>Title</c> 为 null 表示单组、不显示组名。</summary>
+    private sealed record Block(string? Title, IReadOnlyList<HudItem> Items)
+    {
+        public int Height => (Title is null ? 0 : 1) + Items.Count;
     }
 
     /// <summary>一个已排版的条目：键文本 + 它所在行与格子的位置，供高亮定位。</summary>

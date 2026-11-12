@@ -15,6 +15,7 @@ namespace HotkeyHud.App;
 public sealed class HudApp : IDisposable
 {
     private const int TimerIntervalMs = 20;
+    private const int SuppressPollIntervalMs = 2000;
     private const int OverlayAlpha = 235;
 
     private readonly RawInputSource _input;
@@ -23,16 +24,22 @@ public sealed class HudApp : IDisposable
     private readonly KnownShortcutFilter _known = new();
     private readonly ForegroundProbe _probe = new();
     private readonly ForegroundWatcher _watcher;
+    private readonly SuppressionProbe _suppressionProbe = new();
     private readonly TriggerStateMachine _machine;
     private readonly System.Windows.Forms.Timer _timer;
+    private readonly System.Windows.Forms.Timer _suppressTimer;
 
     private HudModel? _currentModel;
+    private bool _manualPause;
+    private bool _gameSuppressed;
     private bool _disposed;
 
-    public HudApp(string? appsDirectory = null)
+    public HudApp(string? appsDirectory = null, GameRules? gameRules = null)
     {
         string directory = appsDirectory
                            ?? Path.Combine(AppContext.BaseDirectory, "Data", "apps");
+
+        GameRules = gameRules ?? new GameRules();
 
         _repository = new ShortcutRepository(directory);
         // 先建会抛异常的那个，避免它失败时已经占着 Raw Input 窗口与 HGlobal
@@ -41,6 +48,7 @@ public sealed class HudApp : IDisposable
         _overlay = new OverlayForm();
         _machine = new TriggerStateMachine { FlashPredicate = _known.AllowFlash };
         _timer = new System.Windows.Forms.Timer { Interval = TimerIntervalMs };
+        _suppressTimer = new System.Windows.Forms.Timer { Interval = SuppressPollIntervalMs };
 
         _input.Input += OnInput;
         _watcher.ForegroundChanged += OnForegroundChanged;
@@ -48,6 +56,10 @@ public sealed class HudApp : IDisposable
         _machine.ComboFlashed += OnComboFlashed;
         _machine.HideRequested += OnHideRequested;
         _timer.Tick += OnTimerTick;
+        _suppressTimer.Tick += OnSuppressTick;
+
+        RefreshSuppression();
+        _suppressTimer.Start();
     }
 
     public RawInputSource Input => _input;
@@ -68,16 +80,27 @@ public sealed class HudApp : IDisposable
     /// <summary>状态机当前状态，供集成测试诊断用。</summary>
     public HudState State => _machine.State;
 
-    /// <summary>手动暂停（§1 的 G1）。S2.5 只有这一个抑制来源，游戏抑制是 S4。</summary>
+    /// <summary>手动暂停（§1 的 G1）。与游戏抑制并列，两者任一为真即抑制。</summary>
     public bool Suppressed
     {
-        get => _machine.Suppressed;
+        get => _manualPause;
         set
         {
-            _machine.Suppressed = value;
-            SyncTimer();
+            _manualPause = value;
+            ApplySuppression();
         }
     }
+
+    /// <summary>游戏 / 全屏抑制的当前判定（§2.2）。只读，由采集结果驱动。</summary>
+    public bool GameSuppressed => _gameSuppressed;
+
+    /// <summary>最近一次抑制判定的命中原因，空串表示未抑制。</summary>
+    public string SuppressReason { get; private set; } = string.Empty;
+
+    /// <summary>最近一次读到的系统通知状态原值（2/3/4 会触发 D1），仅用于诊断。</summary>
+    public int NotificationState => _suppressionProbe.LastNotificationState;
+
+    public GameRules GameRules { get; }
 
     public void ShowOverlay()
     {
@@ -117,7 +140,38 @@ public sealed class HudApp : IDisposable
     private void OnForegroundChanged()
     {
         _probe.Invalidate();
+        _suppressionProbe.Invalidate();
         _machine.OnForegroundChanged();
+        SyncTimer();
+        RefreshSuppression();
+    }
+
+    private void OnSuppressTick(object? sender, EventArgs e) => RefreshSuppression();
+
+    /// <summary>
+    /// 重新采集并判定是否抑制。只在「前台变化」与「2 秒轮询」两个时机调用——
+    /// 绝不在 ShowRequested 里做，那是按键路径，必须零 I/O（§2.2）。
+    /// </summary>
+    private void RefreshSuppression()
+    {
+        try
+        {
+            GameSignal signal = _suppressionProbe.Capture();
+            _gameSuppressed = GameClassifier.ShouldSuppress(signal, GameRules, out string reason);
+            SuppressReason = reason;
+            ApplySuppression();
+        }
+        catch (Exception ex)
+        {
+            // 采集失败不能连累输入通路，退化为「不抑制」并记一笔
+            Debug.WriteLine($"[HotkeyHud] 抑制采集异常：{ex}");
+        }
+    }
+
+    /// <summary>两个抑制来源取并集：手动暂停与游戏抑制互不覆盖。</summary>
+    private void ApplySuppression()
+    {
+        _machine.Suppressed = _manualPause || _gameSuppressed;
         SyncTimer();
     }
 
@@ -227,6 +281,10 @@ public sealed class HudApp : IDisposable
         _timer.Stop();
         _timer.Tick -= OnTimerTick;
         _timer.Dispose();
+
+        _suppressTimer.Stop();
+        _suppressTimer.Tick -= OnSuppressTick;
+        _suppressTimer.Dispose();
 
         _input.Input -= OnInput;
         _machine.ShowRequested -= OnShowRequested;

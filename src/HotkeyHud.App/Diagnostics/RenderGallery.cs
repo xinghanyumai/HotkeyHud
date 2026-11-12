@@ -21,7 +21,11 @@ internal static class RenderGallery
     // 两条路径分开卡（§6.1）：用同一个阈值会让首帧全量重绘长期贴红线，机器一忙就 flaky
     private const double FullRenderBudgetMs = 25.0;
     private const double FlashRenderBudgetMs = 8.0;
-    private const int MaxPanelHeightLogical = 260;
+
+    // §6.1 v1.2 改成「组块不可跨列」后，12 条 + 4 组的面板从 248 涨到 300 逻辑 px：
+    // 最长的一组（编辑 = 组名 + 7 条）独占一列，另两列留白。260 在组块不可跨列下不可达，
+    // 详见 README 的 [SPEC-GAP] 11。
+    private const int MaxPanelHeightLogical = 300;
 
     private static readonly List<string> Report = new();
     private static int _passed;
@@ -105,8 +109,13 @@ internal static class RenderGallery
             Require(logicalHeight <= MaxPanelHeightLogical,
                 $"12 条面板高 {logicalHeight:F0} 逻辑 px，超过 {MaxPanelHeightLogical} 上限");
 
+            // §6.1 v1.2：不存在「无组名的续列」——每列顶部必须是组名
+            IReadOnlyList<string?> leaders = HudPanel.ColumnLeaders(longList);
+            Require(leaders.Count > 0 && leaders.All(leader => leader is not null),
+                $"存在无组名的续列：{string.Join(" / ", leaders.Select(l => l ?? "(无组名)"))}");
+
             return $"{detail}，实画 {overlay.LastItemCount} 条，高 {logicalHeight:F0} 逻辑 px，"
-                   + $"底部「{expected}」";
+                   + $"列首 {string.Join(" / ", leaders)}，底部「{expected}」";
         });
 
         Case("Gallery06 高亮不改变面板尺寸", () =>

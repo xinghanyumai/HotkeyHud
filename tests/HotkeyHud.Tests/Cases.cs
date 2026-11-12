@@ -323,6 +323,23 @@ internal static class Cases
             ExecutablePath: @"C:\Program Files\WindowsApps\notepad.exe");
 
         Check.False(GameClassifier.ShouldSuppress(signal, null, out _), "普通记事本窗口不应抑制");
+
+        // §2.2 D5 的开关：无边框全屏只在 TreatBorderlessFullscreenAsGame 为真时抑制。
+        // 真机上这条规则被 D1 抢先命中（铺满屏幕的窗口会让 QUNS 报「忙」），只能在这一层验证。
+        var borderless = new GameSignal(
+            ExclusiveFullscreen: false,
+            CoversWholeMonitor: true,
+            HasCaption: false,
+            ProcessName: "notepad",
+            WindowClass: "Notepad",
+            ExecutablePath: @"C:\Program Files\WindowsApps\notepad.exe");
+
+        Check.True(GameClassifier.ShouldSuppress(borderless, null, out _), "无边框全屏默认应抑制");
+
+        var d5Off = new GameRules { TreatBorderlessFullscreenAsGame = false };
+        Check.False(
+            GameClassifier.ShouldSuppress(borderless, d5Off, out _),
+            "关闭 D5 开关后无边框全屏不应抑制");
     }
 
     // ---------------- 全局 ----------------
