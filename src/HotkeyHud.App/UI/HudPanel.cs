@@ -9,6 +9,10 @@ namespace HotkeyHud.App.UI;
 /// 面板的布局与绘制，不碰窗口句柄——窗口与分层合成在 <see cref="OverlayForm"/> 里。
 /// 所有尺寸按逻辑像素（96 DPI）定义，绘制前统一乘 scale，避免 100%/150% 下出现两套数字。
 /// <para>
+/// 视觉规格唯一来源：规格 §6.1。键帽只显示非修饰键（修饰键已由头部胶囊表达），
+/// 分组按列内流式排布（组名占一格，不强制换行）。
+/// </para>
+/// <para>
 /// 字体/画刷/画笔全部静态缓存：它们每帧都会用到，逐帧 new 会把渲染耗时推到 10ms 以上。
 /// 这些对象随进程存活，数量固定（4–6 个字号），不做释放。
 /// </para>
@@ -22,40 +26,52 @@ internal static class HudPanel
     private const float PadY = 14f;
     private const float HeaderHeight = 26f;
     private const float HeaderGap = 10f;
-    private const float GroupTitleHeight = 20f;
     private const float RowHeight = 26f;
     private const float KeycapHeight = 22f;
     private const float KeycapRadius = 5f;
     private const float KeycapPadX = 6f;
     private const float KeycapMinWidth = 26f;
     private const float KeycapMaxRatio = 0.62f;
-    private const float ColumnGap = 10f;
+    private const float ColumnGap = 12f;
     private const int Columns = 3;
     private const float FooterHeight = 28f;
+    private const float CapsuleHeight = 22f;
+    private const float CapsuleRadius = 5f;
     private const float BaseWidth = 540f;
     private const float WorkAreaRatio = 0.72f;
     private const float ScreenMargin = 40f;
     private const float EmptyBodyHeight = 44f;
 
-    // 规格 §6 色值
-    private static readonly Color PanelBackground = Color.FromArgb(235, 0x16, 0x18, 0x1D);
+    // 规格 §6.1 色值
+    private static readonly Color PanelBackground = Color.FromArgb(245, 0x16, 0x18, 0x1D); // 96%
     private static readonly Color TextPrimary = Color.FromArgb(255, 255, 255, 255);
-    private static readonly Color TextSecondary = Color.FromArgb(140, 255, 255, 255);
+    private static readonly Color TextSecondary = Color.FromArgb(140, 255, 255, 255); // 55%
 
     private static readonly SolidBrush PanelBrush = new(PanelBackground);
     private static readonly Pen PanelBorderPen = new(Color.FromArgb(26, 255, 255, 255), 1f);
     private static readonly SolidBrush TextPrimaryBrush = new(TextPrimary);
     private static readonly SolidBrush TextSecondaryBrush = new(TextSecondary);
-    private static readonly SolidBrush KeycapBrush = new(Color.FromArgb(20, 255, 255, 255));
-    private static readonly Pen KeycapPen = new(Color.FromArgb(41, 255, 255, 255), 1f);
+    private static readonly SolidBrush KeycapBrush = new(Color.FromArgb(23, 255, 255, 255)); // 9%
+    private static readonly Pen KeycapPen = new(Color.FromArgb(41, 255, 255, 255), 1f); // 16%
     private static readonly Pen DividerPen = new(Color.FromArgb(26, 255, 255, 255), 1f);
-    private static readonly SolidBrush RowHighlightBrush = new(Color.FromArgb(20, 255, 255, 255));
+    private static readonly SolidBrush RowHighlightBrush = new(Color.FromArgb(20, 255, 255, 255)); // 8%
     private static readonly SolidBrush CtrlAccent = new(Color.FromArgb(0x4C, 0x8D, 0xFF));
     private static readonly SolidBrush AltAccent = new(Color.FromArgb(0xFF, 0x9F, 0x45));
     private static readonly SolidBrush ShiftAccent = new(Color.FromArgb(0x3D, 0xDC, 0x97));
     private static readonly SolidBrush WinAccent = new(Color.FromArgb(0x4C, 0xC9, 0xF0));
 
     private static readonly Dictionary<int, Font> FontCache = new();
+
+    /// <summary>§6.1 缩写表。长键名会挤掉动作文案，缩写后键帽宽度从约 100px 降到约 50px。</summary>
+    private static readonly Dictionary<string, string> KeyAbbreviations = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Backspace"] = "Bksp",
+        ["PageUp"] = "PgUp",
+        ["PageDown"] = "PgDn",
+        ["Delete"] = "Del",
+        ["Insert"] = "Ins",
+        ["PrintScreen"] = "PrtSc",
+    };
 
     private static readonly StringFormat Centered = new()
     {
@@ -95,29 +111,24 @@ internal static class HudPanel
         _ => CtrlAccent,
     };
 
-    /// <summary>面板尺寸由内容决定；宽度上限取「基准宽度」与「工作区 72%」的较小值。</summary>
+    /// <summary>
+    /// 面板尺寸由内容决定：格数 = 条目数 + 组名数，按 3 列分摊后取行数。
+    /// 宽度上限取「基准宽度」与「工作区 72%」的较小值。
+    /// </summary>
     public static Size Measure(HudModel model, float scale, int workAreaWidth)
     {
         int width = (int)Math.Min(BaseWidth * scale, workAreaWidth * WorkAreaRatio);
         float height = PadY * 2 + HeaderHeight + HeaderGap;
 
-        if (VisibleCount(model) == 0)
+        List<Cell> cells = BuildCells(model);
+        if (cells.Count == 0)
         {
             height += EmptyBodyHeight;
         }
         else
         {
-            foreach ((bool showTitle, int itemCount) in GroupPlan(model))
-            {
-                if (showTitle)
-                {
-                    height += GroupTitleHeight;
-                }
-
-                height += RowsOf(itemCount) * RowHeight;
-            }
-
-            height += FooterHeight;
+            // 打包后实际行数可能比 ceil(格数/3) 多一行（组名让位），高度必须按实际行数算
+            height += PackedRows(cells) * RowHeight + FooterHeight;
         }
 
         return new Size(width, (int)Math.Ceiling(height * scale));
@@ -139,7 +150,7 @@ internal static class HudPanel
 
     /// <summary>
     /// 画完整面板（不含高亮），返回每个条目的行位置供高亮复用。
-    /// 高亮是叠加上去的：同一份模型下只需重画高亮，不必整帧重绘（§3.2 的 16ms 预算靠这个守住）。
+    /// 高亮是叠加上去的：同一份模型下只需重画高亮，不必整帧重绘（§6.1 的性能门槛靠这个守住）。
     /// </summary>
     public static IReadOnlyList<PlacedItem> DrawBase(Graphics graphics, HudModel model, float scale)
     {
@@ -164,16 +175,18 @@ internal static class HudPanel
 
         float y = padY + HeaderHeight * scale + HeaderGap * scale;
 
-        if (VisibleCount(model) == 0)
+        List<Cell> cells = BuildCells(model);
+        if (cells.Count == 0)
         {
             DrawEmptyBody(graphics, model, scale, padX, y, contentWidth);
             return Array.Empty<PlacedItem>();
         }
 
         var placed = new List<PlacedItem>(MaxVisibleItems);
-        y = DrawGroups(graphics, model, scale, padX, y, contentWidth, placed);
+        int rows = PackedRows(cells);
+        DrawCells(graphics, PackColumns(cells, RowsOf(cells.Count)), scale, padX, y, contentWidth, placed);
 
-        DrawFooter(graphics, model, scale, padX, y, contentWidth);
+        DrawFooter(graphics, model, scale, padX, y + rows * RowHeight * scale, contentWidth);
         return placed;
     }
 
@@ -190,8 +203,25 @@ internal static class HudPanel
         }
 
         graphics.FillRectangle(RowHighlightBrush, 0f, match.RowY, panelWidth, match.RowHeight);
-        // 竖条放在命中格子的左缘而不是面板左缘：3 列同一行有 3 条时，放面板边缘会分不清命中的是哪个
+        // 竖条放在命中格子的左缘而不是面板左缘：同一行有 3 格时，放面板边缘会分不清命中的是哪个
         graphics.FillRectangle(AccentBrushOf(combo.Modifiers), match.CellX, match.RowY, 2f * scale, match.RowHeight);
+    }
+
+    /// <summary>底部提示文案。抽成公开方法是为了让验收能断言文本本身，而不是只截图看。</summary>
+    public static string FooterText(HudModel model)
+    {
+        int hidden = Math.Max(0, model.TotalCount - MaxVisibleItems);
+        string modifierName = model.Modifier == Modifier.None ? "修饰键" : model.Modifier.ToString();
+        string tail = $"松开 {modifierName} 隐藏";
+        return hidden > 0 ? $"还有 {hidden} 个未显示 · {tail}" : tail;
+    }
+
+    /// <summary>键帽只显示非修饰键，并套用 §6.1 缩写表。</summary>
+    public static string KeycapText(string keys)
+    {
+        int index = keys.LastIndexOf('+');
+        string key = index >= 0 ? keys[(index + 1)..] : keys;
+        return KeyAbbreviations.TryGetValue(key, out string? shortName) ? shortName : key;
     }
 
     // ---------------- 头部 ----------------
@@ -204,11 +234,12 @@ internal static class HudPanel
         Font headerFont = FontOf(12f * scale);
 
         SizeF capsText = graphics.MeasureString(modifierName, capsFont, PointF.Empty, StringFormat.GenericTypographic);
-        float capsHeight = 20f * scale;
+        float capsHeight = CapsuleHeight * scale;
         float capsWidth = capsText.Width + 16f * scale;
         float capsTop = y + (HeaderHeight * scale - capsHeight) / 2;
 
-        using (var capsPath = RoundedRect(new RectangleF(x, capsTop, capsWidth, capsHeight), capsHeight / 2))
+        using (var capsPath = RoundedRect(
+                   new RectangleF(x, capsTop, capsWidth, capsHeight), CapsuleRadius * scale))
         {
             graphics.FillPath(AccentBrushOf(model.Modifier), capsPath);
         }
@@ -228,14 +259,12 @@ internal static class HudPanel
             new RectangleF(x, y, contentWidth, HeaderHeight * scale), RightMiddle);
     }
 
-    // ---------------- 分组与条目 ----------------
+    // ---------------- 单元格（组名 / 条目）----------------
 
-    private static float DrawGroups(
-        Graphics graphics, HudModel model, float scale,
+    private static void DrawCells(
+        Graphics graphics, List<Cell>[] columns, float scale,
         float x, float y, float contentWidth, List<PlacedItem> placed)
     {
-        List<(HudGroup Group, List<HudItem> Items, bool ShowTitle)> plan = BuildPlan(model);
-
         Font groupFont = FontOf(11f * scale);
         Font itemFont = FontOf(13f * scale);
         Font keyFont = FontOf(11f * scale);
@@ -243,27 +272,29 @@ internal static class HudPanel
         float columnWidth = (contentWidth - ColumnGap * scale * (Columns - 1)) / Columns;
         float keycapMaxWidth = columnWidth * KeycapMaxRatio;
 
-        foreach ((HudGroup group, List<HudItem> items, bool showTitle) in plan)
+        for (int column = 0; column < columns.Length; column++)
         {
-            if (showTitle)
+            for (int row = 0; row < columns[column].Count; row++)
             {
-                graphics.DrawString(group.Title, groupFont, TextSecondaryBrush, new PointF(x, y + 2f * scale));
-                y += GroupTitleHeight * scale;
-            }
-
-            for (int i = 0; i < items.Count; i++)
-            {
-                int column = i % Columns;
-                int row = i / Columns;
-
+                Cell cell = columns[column][row];
                 float cellX = x + column * (columnWidth + ColumnGap * scale);
                 float cellY = y + row * RowHeight * scale;
+
+                if (cell.GroupTitle is { } title)
+                {
+                    graphics.DrawString(
+                        title, groupFont, TextSecondaryBrush,
+                        new RectangleF(cellX, cellY, columnWidth, RowHeight * scale), LeftMiddle);
+                    continue;
+                }
+
+                HudItem item = cell.Item!;
+                string keyText = KeycapText(item.Keys);
                 float keycapY = cellY + (RowHeight * scale - KeycapHeight * scale) / 2;
 
-                // 每个键帽按自己的文字宽度算，不取全局最大——否则一个 Ctrl+Backspace
-                // 会把整列键帽撑宽，所有动作文案都被省略号截断
+                // 每个键帽按自己的文字宽度算，不取全局最大——否则一个长键名会把整列键帽撑宽
                 float measured = graphics.MeasureString(
-                    items[i].Keys, keyFont, PointF.Empty, StringFormat.GenericTypographic).Width;
+                    keyText, keyFont, PointF.Empty, StringFormat.GenericTypographic).Width;
                 float keycapWidth = Math.Min(
                     Math.Max(measured + KeycapPadX * 2 * scale, KeycapMinWidth * scale),
                     keycapMaxWidth);
@@ -275,33 +306,20 @@ internal static class HudPanel
                     graphics.DrawPath(KeycapPen, keycapPath);
                 }
 
-                graphics.DrawString(items[i].Keys, keyFont, TextPrimaryBrush, keycap, CenteredEllipsis);
+                graphics.DrawString(keyText, keyFont, TextPrimaryBrush, keycap, CenteredEllipsis);
 
                 float textX = keycap.Right + 6f * scale;
                 graphics.DrawString(
-                    items[i].Action, itemFont, TextPrimaryBrush,
+                    item.Action, itemFont, TextPrimaryBrush,
                     new RectangleF(textX, cellY, Math.Max(10f, cellX + columnWidth - textX), RowHeight * scale),
                     LeftMiddle);
 
-                placed.Add(new PlacedItem(items[i].Keys, cellY, RowHeight * scale, cellX, columnWidth));
+                placed.Add(new PlacedItem(item.Keys, cellY, RowHeight * scale, cellX));
             }
-
-            y += RowsOf(items.Count) * RowHeight * scale;
         }
-
-        return y;
     }
 
     // ---------------- 底部与空态 ----------------
-
-    /// <summary>底部提示文案。抽成公开方法是为了让验收能断言文本本身，而不是只截图看。</summary>
-    public static string FooterText(HudModel model)
-    {
-        int hidden = Math.Max(0, model.TotalCount - MaxVisibleItems);
-        string modifierName = model.Modifier == Modifier.None ? "修饰键" : model.Modifier.ToString();
-        string tail = $"松开 {modifierName} 隐藏";
-        return hidden > 0 ? $"还有 {hidden} 个未显示 · {tail}" : tail;
-    }
 
     private static void DrawFooter(
         Graphics graphics, HudModel model, float scale, float x, float y, float contentWidth)
@@ -328,17 +346,15 @@ internal static class HudPanel
 
     // ---------------- 规划与度量 ----------------
 
-    private static int VisibleCount(HudModel model)
-        => Math.Min(model.TotalCount, MaxVisibleItems);
-
-    private static int RowsOf(int itemCount)
-        => itemCount == 0 ? 0 : (itemCount + Columns - 1) / Columns;
-
-    private static List<(HudGroup Group, List<HudItem> Items, bool ShowTitle)> BuildPlan(HudModel model)
+    /// <summary>
+    /// 把模型摊平成一串单元格：组名一格 + 该组条目各一格。
+    /// 条目总数受 <see cref="MaxVisibleItems"/> 限制，组名不计入上限。
+    /// </summary>
+    private static List<Cell> BuildCells(HudModel model)
     {
         bool showTitle = model.Groups.Count > 1;
         int remaining = MaxVisibleItems;
-        var plan = new List<(HudGroup, List<HudItem>, bool)>();
+        var cells = new List<Cell>(MaxVisibleItems + model.Groups.Count);
 
         foreach (HudGroup group in model.Groups)
         {
@@ -359,17 +375,89 @@ internal static class HudPanel
                 remaining--;
             }
 
-            if (items.Count > 0)
+            if (items.Count == 0)
             {
-                plan.Add((group, items, showTitle));
+                continue;
+            }
+
+            if (showTitle)
+            {
+                cells.Add(Cell.Title(group.Title));
+            }
+
+            foreach (HudItem item in items)
+            {
+                cells.Add(Cell.Entry(item));
             }
         }
 
-        return plan;
+        return cells;
     }
 
-    private static IEnumerable<(bool ShowTitle, int ItemCount)> GroupPlan(HudModel model)
-        => BuildPlan(model).Select(entry => (entry.ShowTitle, entry.Items.Count));
+    /// <summary>
+    /// 列内流式打包：先填满第 1 列再换列。
+    /// <para>
+    /// 比 §6.1 的原始算法多一条约束：**组名不得落在列底**。否则组名留在上一列末尾、
+    /// 它的条目全在下一列顶部，会被读成上一组的条目（实测 Chrome 面板的「网页」组就是这样）。
+    /// 遇到这种情况让该组名从下一列开头起，列内格数允许不齐。
+    /// </para>
+    /// </summary>
+    private static List<Cell>[] PackColumns(List<Cell> cells, int rows)
+    {
+        var columns = new List<Cell>[Columns];
+        int index = 0;
+
+        for (int column = 0; column < Columns; column++)
+        {
+            var bucket = new List<Cell>(rows);
+            while (index < cells.Count && bucket.Count < rows)
+            {
+                // 组名若将落在本列最后一行，且后面还有条目，就把它挪到下一列开头
+                bool orphanTitle = cells[index].GroupTitle is not null
+                                   && bucket.Count == rows - 1
+                                   && index + 1 < cells.Count;
+                if (orphanTitle)
+                {
+                    break;
+                }
+
+                bucket.Add(cells[index]);
+                index++;
+            }
+
+            columns[column] = bucket;
+        }
+
+        // 极端情况下（组特别多）3 列装不下，把剩下的都塞进最后一列，宁可溢出也不丢内容
+        while (index < cells.Count)
+        {
+            columns[^1].Add(cells[index]);
+            index++;
+        }
+
+        return columns;
+    }
+
+    private static int RowsOf(int cellCount)
+        => cellCount == 0 ? 0 : (cellCount + Columns - 1) / Columns;
+
+    /// <summary>打包后真正占用的行数（= 最长一列的格数）。</summary>
+    private static int PackedRows(List<Cell> cells)
+    {
+        if (cells.Count == 0)
+        {
+            return 0;
+        }
+
+        List<Cell>[] columns = PackColumns(cells, RowsOf(cells.Count));
+        int rows = 0;
+        foreach (List<Cell> column in columns)
+        {
+            rows = Math.Max(rows, column.Count);
+        }
+
+        return rows;
+    }
 
     private static Font FontOf(float pixelSize)
     {
@@ -401,16 +489,23 @@ internal static class HudPanel
         return path;
     }
 
-    /// <summary>一个已排版的条目：键文本 + 它所在行与格子的范围，供高亮定位。</summary>
+    /// <summary>列内流式排布的基本单位：要么是组名，要么是一个条目。</summary>
+    private readonly record struct Cell(string? GroupTitle, HudItem? Item)
+    {
+        public static Cell Title(string title) => new(title, null);
+
+        public static Cell Entry(HudItem item) => new(null, item);
+    }
+
+    /// <summary>一个已排版的条目：键文本 + 它所在行与格子的位置，供高亮定位。</summary>
     internal sealed class PlacedItem
     {
-        public PlacedItem(string keys, float rowY, float rowHeight, float cellX, float cellWidth)
+        public PlacedItem(string keys, float rowY, float rowHeight, float cellX)
         {
             Keys = keys;
             RowY = rowY;
             RowHeight = rowHeight;
             CellX = cellX;
-            CellWidth = cellWidth;
         }
 
         public string Keys { get; }
@@ -420,7 +515,5 @@ internal static class HudPanel
         public float RowHeight { get; }
 
         public float CellX { get; }
-
-        public float CellWidth { get; }
     }
 }
