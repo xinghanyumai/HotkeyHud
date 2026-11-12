@@ -9,11 +9,13 @@ public readonly record struct GameSignal(
     string? WindowClass,
     string? ExecutablePath);
 
-/// <summary>可配置项。D3 的用户名单与 D5 的开关都在这里。</summary>
+/// <summary>
+/// 可配置项。只剩 D3 的用户名单——D5 的开关在 S5 删掉了：
+/// 真机实测任何铺满屏幕的窗口都让 QUNS 报 2，D1 先命中，那个开关按下去没反应，
+/// 暴露一个「按了没反应」的开关比没有开关更糟（§2.2 v1.3）。
+/// </summary>
 public sealed class GameRules
 {
-    public bool TreatBorderlessFullscreenAsGame { get; init; } = true;
-
     public IReadOnlyCollection<string> GameProcessNames { get; init; } = Array.Empty<string>();
 }
 
@@ -98,9 +100,9 @@ public static class GameClassifier
             }
         }
 
-        // D5 无边框全屏（会误伤放映 / 全屏视频 / F11，这是有意为之）
-        bool borderlessCountsAsGame = rules?.TreatBorderlessFullscreenAsGame ?? true;
-        if (signal.CoversWholeMonitor && !signal.HasCaption && borderlessCountsAsGame)
+        // D5 无边框全屏（会误伤放映 / 全屏视频 / F11，这是有意为之）。
+        // 恒开：多数机器上 D1 的 QUNS=2 会先命中，它只在 QUNS 不上报全屏的组合下兜底
+        if (signal.CoversWholeMonitor && !signal.HasCaption)
         {
             reason = "D5 无边框全屏";
             return true;

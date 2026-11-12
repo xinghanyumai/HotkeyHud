@@ -324,8 +324,7 @@ internal static class Cases
 
         Check.False(GameClassifier.ShouldSuppress(signal, null, out _), "普通记事本窗口不应抑制");
 
-        // §2.2 D5 的开关：无边框全屏只在 TreatBorderlessFullscreenAsGame 为真时抑制。
-        // 真机上这条规则被 D1 抢先命中（铺满屏幕的窗口会让 QUNS 报「忙」），只能在这一层验证。
+        // §2.2 v1.3：D5 恒开，不再有开关。无边框全屏必须抑制——它是 QUNS 不上报全屏时的兜底
         var borderless = new GameSignal(
             ExclusiveFullscreen: false,
             CoversWholeMonitor: true,
@@ -334,12 +333,16 @@ internal static class Cases
             WindowClass: "Notepad",
             ExecutablePath: @"C:\Program Files\WindowsApps\notepad.exe");
 
-        Check.True(GameClassifier.ShouldSuppress(borderless, null, out _), "无边框全屏默认应抑制");
+        Check.True(
+            GameClassifier.ShouldSuppress(borderless, null, out string d5Reason),
+            "无边框全屏必须抑制（D5 恒开）");
+        Check.True(d5Reason.StartsWith("D5", StringComparison.Ordinal), $"命中原因应为 D5，实际 {d5Reason}");
 
-        var d5Off = new GameRules { TreatBorderlessFullscreenAsGame = false };
+        // 有标题栏的全屏窗口（最大化）不算 D5
+        var maximized = borderless with { HasCaption = true };
         Check.False(
-            GameClassifier.ShouldSuppress(borderless, d5Off, out _),
-            "关闭 D5 开关后无边框全屏不应抑制");
+            GameClassifier.ShouldSuppress(maximized, null, out _),
+            "有标题栏的全屏窗口不应按 D5 抑制");
     }
 
     // ---------------- 全局 ----------------

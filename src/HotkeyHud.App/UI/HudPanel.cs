@@ -131,7 +131,7 @@ internal static class HudPanel
         }
         else
         {
-            height += PackedRows(blocks) * RowHeight + FooterHeight;
+            height += Pack(blocks).Rows * RowHeight + FooterHeight;
         }
 
         return new Size(width, (int)Math.Ceiling(height * scale));
@@ -186,8 +186,8 @@ internal static class HudPanel
         }
 
         var placed = new List<PlacedItem>(MaxVisibleItems);
-        int rows = PackedRows(blocks);
-        DrawCells(graphics, PackColumns(blocks, rows), scale, padX, y, contentWidth, placed);
+        (List<Cell>[] columns, int rows) = Pack(blocks);
+        DrawCells(graphics, columns, scale, padX, y, contentWidth, placed);
 
         DrawFooter(graphics, model, scale, padX, y + rows * RowHeight * scale, contentWidth);
         return placed;
@@ -239,7 +239,7 @@ internal static class HudPanel
             return Array.Empty<string?>();
         }
 
-        List<Cell>[] columns = PackColumns(blocks, PackedRows(blocks));
+        (List<Cell>[] columns, _) = Pack(blocks);
         var leaders = new List<string?>(Columns);
         foreach (List<Cell> column in columns)
         {
@@ -250,6 +250,25 @@ internal static class HudPanel
         }
 
         return leaders;
+    }
+
+    /// <summary>每一列实际占用的行数，用于验收「三列高度差 ≤ 2 行」。</summary>
+    public static IReadOnlyList<int> ColumnHeights(HudModel model)
+    {
+        List<Block> blocks = BuildBlocks(model);
+        if (blocks.Count == 0)
+        {
+            return Array.Empty<int>();
+        }
+
+        (List<Cell>[] columns, _) = Pack(blocks);
+        var heights = new List<int>(Columns);
+        foreach (List<Cell> column in columns)
+        {
+            heights.Add(column.Count);
+        }
+
+        return heights;
     }
 
     // ---------------- 头部 ----------------
@@ -445,48 +464,11 @@ internal static class HudPanel
     }
 
     /// <summary>
-    /// 组块按顺序装列：当前列装不下整块就整块换列，**绝不把一个组拆到两列**。
-    /// 列数超过 3 时抬高目标高度重试，直到能装下。
+    /// 组块按「当前最短列优先」装填（§6.1 v1.3）。装不下就拆，续块带「组名（续）」
+    /// 且紧跟其后——这样不会出现无组名的续列，也不会出现两列半空。
     /// </summary>
-    private static List<Block>[] PackBlocks(List<Block> blocks, int capacity)
+    private static (List<Cell>[] Columns, int Rows) Pack(List<Block> blocks)
     {
-        var columns = new List<Block>[Columns];
-        for (int i = 0; i < Columns; i++)
-        {
-            columns[i] = new List<Block>();
-        }
-
-        int column = 0;
-        int used = 0;
-        foreach (Block block in blocks)
-        {
-            if (used > 0 && used + block.Height > capacity)
-            {
-                column++;
-                used = 0;
-            }
-
-            if (column >= Columns)
-            {
-                // 装不下：交给 PackedRows 抬高 capacity 后重试
-                break;
-            }
-
-            columns[column].Add(block);
-            used += block.Height;
-        }
-
-        return columns;
-    }
-
-    /// <summary>打包后真正占用的行数（= 最长一列的格数）。</summary>
-    private static int PackedRows(List<Block> blocks)
-    {
-        if (blocks.Count == 0)
-        {
-            return 0;
-        }
-
         int total = 0;
         foreach (Block block in blocks)
         {
@@ -496,68 +478,114 @@ internal static class HudPanel
         int capacity = RowsOf(total);
         while (true)
         {
-            List<Block>[] columns = PackBlocks(blocks, capacity);
-            int placed = 0;
-            int rows = 0;
-            foreach (List<Block> column in columns)
+            (List<Cell>[] Columns, int Rows)? packed = TryPack(blocks, capacity);
+            if (packed is not null)
             {
-                int height = 0;
-                foreach (Block block in column)
-                {
-                    height += block.Height;
-                    placed += block.Height;
-                }
-
-                rows = Math.Max(rows, height);
-            }
-
-            if (placed == total)
-            {
-                return rows;
+                return packed.Value;
             }
 
             capacity++;
         }
     }
 
-    private static List<Cell>[] PackColumns(List<Block> blocks, int rows)
+    private static (List<Cell>[] Columns, int Rows)? TryPack(List<Block> blocks, int capacity)
     {
         var columns = new List<Cell>[Columns];
+        var heights = new int[Columns];
+        var full = new bool[Columns];
         for (int i = 0; i < Columns; i++)
         {
-            columns[i] = new List<Cell>();
+            columns[i] = new List<Cell>(capacity);
         }
 
-        int column = 0;
-        int used = 0;
-        foreach (Block block in blocks)
+        var pending = new List<Block>(blocks);
+        while (pending.Count > 0)
         {
-            if (used > 0 && used + block.Height > rows)
+            int target = ShortestColumn(heights, full);
+            if (target < 0)
             {
-                column++;
-                used = 0;
+                return null; // 三列都满了还装不下，抬高 capacity 重试
             }
 
-            if (column >= Columns)
+            Block block = pending[0];
+            int remaining = capacity - heights[target];
+            int titleCells = block.Title is null ? 0 : 1;
+
+            if (block.Height <= remaining)
             {
-                break;
+                Append(columns[target], block);
+                heights[target] += block.Height;
+                pending.RemoveAt(0);
+                continue;
             }
 
-            if (block.Title is not null)
+            // 剩余空间连「组名 + 1 条」都放不下：这一列就此封口
+            if (remaining < titleCells + 1)
             {
-                columns[column].Add(Cell.Title(block.Title));
-                used++;
+                full[target] = true;
+                continue;
             }
 
-            foreach (HudItem item in block.Items)
+            int itemCount = remaining - titleCells;
+            var chunk = new Block(block.Title, block.Items.Take(itemCount).ToArray());
+            Append(columns[target], chunk);
+            heights[target] += chunk.Height;
+            pending.RemoveAt(0);
+
+            HudItem[] rest = block.Items.Skip(itemCount).ToArray();
+            if (rest.Length > 0)
             {
-                columns[column].Add(Cell.Entry(item));
-                used++;
+                pending.Insert(0, new Block(ContinueTitle(block.Title), rest));
+            }
+
+            full[target] = true;
+        }
+
+        int rows = 0;
+        for (int i = 0; i < Columns; i++)
+        {
+            rows = Math.Max(rows, heights[i]);
+        }
+
+        return (columns, rows);
+    }
+
+    private static int ShortestColumn(int[] heights, bool[] full)
+    {
+        int best = -1;
+        for (int i = 0; i < heights.Length; i++)
+        {
+            if (full[i])
+            {
+                continue;
+            }
+
+            if (best < 0 || heights[i] < heights[best])
+            {
+                best = i;
             }
         }
 
-        return columns;
+        return best;
     }
+
+    private static void Append(List<Cell> column, Block block)
+    {
+        if (block.Title is not null)
+        {
+            column.Add(Cell.Title(block.Title));
+        }
+
+        foreach (HudItem item in block.Items)
+        {
+            column.Add(Cell.Entry(item));
+        }
+    }
+
+    private static string? ContinueTitle(string? title)
+        => title is null || title.EndsWith("（续）", StringComparison.Ordinal)
+            ? title
+            : title + "（续）";
 
     private static int RowsOf(int cellCount)
         => cellCount == 0 ? 0 : (cellCount + Columns - 1) / Columns;

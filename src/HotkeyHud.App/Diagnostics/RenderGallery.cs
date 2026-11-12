@@ -22,10 +22,10 @@ internal static class RenderGallery
     private const double FullRenderBudgetMs = 25.0;
     private const double FlashRenderBudgetMs = 8.0;
 
-    // §6.1 v1.2 改成「组块不可跨列」后，12 条 + 4 组的面板从 248 涨到 300 逻辑 px：
-    // 最长的一组（编辑 = 组名 + 7 条）独占一列，另两列留白。260 在组块不可跨列下不可达，
-    // 详见 README 的 [SPEC-GAP] 11。
-    private const int MaxPanelHeightLogical = 300;
+    // §6.1 v1.3：高度上限 = min(320, 屏高 × 30%)。S3.5 那个 260 是拍脑袋的，没有产品依据
+    private const int MaxPanelHeightCap = 320;
+    private const double MaxPanelHeightRatio = 0.30;
+    private const int MaxColumnHeightSpread = 2;
 
     private static readonly List<string> Report = new();
     private static int _passed;
@@ -84,7 +84,9 @@ internal static class RenderGallery
 
         Case("Gallery04 空态截图", () =>
             Capture(overlay, empty, null, Path.Combine(outputDirectory, "03-empty.png"),
-                expectText: false));        Case("Gallery05 长列表截断", () =>
+                expectText: false));
+
+        Case("Gallery05 长列表截断", () =>
         {
             Require(longList.TotalCount > HudPanel.MaxVisibleItems,
                 $"样本条目数 {longList.TotalCount} 未超过 {HudPanel.MaxVisibleItems}，无法验证截断");
@@ -106,16 +108,26 @@ internal static class RenderGallery
             Require(HudPanel.KeycapText("Ctrl+[") == "[", "符号键被误处理");
 
             double logicalHeight = LogicalHeight(overlay);
-            Require(logicalHeight <= MaxPanelHeightLogical,
-                $"12 条面板高 {logicalHeight:F0} 逻辑 px，超过 {MaxPanelHeightLogical} 上限");
+            double limit = Math.Min(MaxPanelHeightCap, WorkAreaLogicalHeight(overlay) * MaxPanelHeightRatio);
+            Require(logicalHeight <= limit,
+                $"12 条面板高 {logicalHeight:F0} 逻辑 px，超过上限 {limit:F0}"
+                + $"（min({MaxPanelHeightCap}, 屏高×{MaxPanelHeightRatio:P0})）");
 
-            // §6.1 v1.2：不存在「无组名的续列」——每列顶部必须是组名
+            // §6.1 v1.3：三列高度差 ≤ 2 行，避免「一列顶满、两列半空」的形状
+            IReadOnlyList<int> heights = HudPanel.ColumnHeights(longList);
+            int spread = heights.Max() - heights.Min();
+            Require(spread <= MaxColumnHeightSpread,
+                $"三列高度 {string.Join("/", heights)}，相差 {spread} 行，超过 {MaxColumnHeightSpread} 行");
+
+            // §6.1 v1.3：不存在「无组名的续列」——每列顶部必须是组名
             IReadOnlyList<string?> leaders = HudPanel.ColumnLeaders(longList);
             Require(leaders.Count > 0 && leaders.All(leader => leader is not null),
                 $"存在无组名的续列：{string.Join(" / ", leaders.Select(l => l ?? "(无组名)"))}");
 
-            return $"{detail}，实画 {overlay.LastItemCount} 条，高 {logicalHeight:F0} 逻辑 px，"
-                   + $"列首 {string.Join(" / ", leaders)}，底部「{expected}」";
+            string leaderText = string.Join(" / ", leaders);
+            return $"{detail}，实画 {overlay.LastItemCount} 条，高 {logicalHeight:F0} 逻辑 px"
+                   + $"（上限 {limit:F0}），列高 {string.Join("/", heights)}，列首 {leaderText}，"
+                   + $"底部「{expected}」";
         });
 
         Case("Gallery06 高亮不改变面板尺寸", () =>
@@ -278,6 +290,15 @@ internal static class RenderGallery
         uint dpi = NativeMethods.GetDpiForWindow(overlay.Handle);
         double scale = dpi == 0 ? 1.0 : dpi / 96.0;
         return overlay.LastBounds.Height / scale;
+    }
+
+    /// <summary>工作区高度（逻辑 px），用于「屏高 × 30%」这条上限。</summary>
+    private static double WorkAreaLogicalHeight(OverlayForm overlay)
+    {
+        uint dpi = NativeMethods.GetDpiForWindow(overlay.Handle);
+        double scale = dpi == 0 ? 1.0 : dpi / 96.0;
+        Rectangle workArea = Screen.PrimaryScreen?.WorkingArea ?? new Rectangle(0, 0, 1920, 1080);
+        return workArea.Height / scale;
     }
 
     /// <summary>真实窗口矩形。不能用 <c>LastBounds</c>——那是渲染前算出来的期望值，拿它自己比自己恒真。</summary>

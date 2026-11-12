@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using HotkeyHud.App.Platform;
+using HotkeyHud.App.Shell;
 using HotkeyHud.App.UI;
 using HotkeyHud.Core;
 
@@ -21,7 +22,7 @@ public sealed class HudApp : IDisposable
     private readonly RawInputSource _input;
     private readonly OverlayForm _overlay;
     private readonly ShortcutRepository _repository;
-    private readonly KnownShortcutFilter _known = new();
+    private KnownShortcutFilter _known;
     private readonly ForegroundProbe _probe = new();
     private readonly ForegroundWatcher _watcher;
     private readonly SuppressionProbe _suppressionProbe = new();
@@ -34,19 +35,21 @@ public sealed class HudApp : IDisposable
     private bool _gameSuppressed;
     private bool _disposed;
 
-    public HudApp(string? appsDirectory = null, GameRules? gameRules = null)
+    public HudApp(string? appsDirectory = null, GameRules? gameRules = null, AppConfig? config = null)
     {
         string directory = appsDirectory
                            ?? Path.Combine(AppContext.BaseDirectory, "Data", "apps");
 
-        GameRules = gameRules ?? new GameRules();
+        Config = config ?? new AppConfig();
+        GameRules = gameRules ?? new GameRules { GameProcessNames = Config.ExtraGameProcesses };
+        _known = new KnownShortcutFilter(Config.KnownShortcuts);
 
         _repository = new ShortcutRepository(directory);
         // 先建会抛异常的那个，避免它失败时已经占着 Raw Input 窗口与 HGlobal
         _watcher = new ForegroundWatcher();
         _input = new RawInputSource();
         _overlay = new OverlayForm();
-        _machine = new TriggerStateMachine { FlashPredicate = _known.AllowFlash };
+        _machine = new TriggerStateMachine(Config.DwellMs) { FlashPredicate = _known.AllowFlash };
         _timer = new System.Windows.Forms.Timer { Interval = TimerIntervalMs };
         _suppressTimer = new System.Windows.Forms.Timer { Interval = SuppressPollIntervalMs };
 
@@ -100,7 +103,29 @@ public sealed class HudApp : IDisposable
     /// <summary>最近一次读到的系统通知状态原值（2/3/4 会触发 D1），仅用于诊断。</summary>
     public int NotificationState => _suppressionProbe.LastNotificationState;
 
-    public GameRules GameRules { get; }
+    public GameRules GameRules { get; private set; }
+
+    public AppConfig Config { get; private set; }
+
+    /// <summary>前台进程名，托盘状态行用。</summary>
+    public string ForegroundApp => _probe.ProcessName;
+
+    /// <summary>
+    /// 重载配置与档案：仓库重新读盘、熟记名单重建、长按阈值重设。
+    /// 只在这里改这三样，避免「读了但没接上」。
+    /// </summary>
+    public void ReloadData(AppConfig config)
+    {
+        Config = config;
+        GameRules = new GameRules { GameProcessNames = config.ExtraGameProcesses };
+
+        _repository.Reload();
+        _known = new KnownShortcutFilter(config.KnownShortcuts);
+        _machine.FlashPredicate = _known.AllowFlash;
+        _machine.DwellMs = config.DwellMs;
+
+        RefreshSuppression();
+    }
 
     public void ShowOverlay()
     {

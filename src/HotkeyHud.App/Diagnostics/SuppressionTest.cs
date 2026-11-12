@@ -43,7 +43,7 @@ internal static class SuppressionTest
         Case("S4-1 普通窗口不抑制", () => NormalWindowShows(outputDirectory));
         Case("S4-2 无边框全屏抑制", () => BorderlessFullscreenSuppresses(outputDirectory));
         Case("S4-3 切回普通窗口后恢复", () => RecoversAfterLeavingFullscreen(outputDirectory));
-        Case("S4-4 D1 优先于 D5（关掉 D5 仍被抑制）", () => RuleOffStillSuppressedByD1(outputDirectory));
+        Case("S4-4 extraGameProcesses 命中 D3", () => ExtraProcessListTriggersD3(outputDirectory));
         Case("S4-5 单次采集 p95 < 5ms", MeasureCaptureCost);
         Case("S4-6 空闲 10 秒 CPU 增量 < 100ms", MeasureIdleCpu);
 
@@ -125,31 +125,31 @@ internal static class SuppressionTest
         return "退出全屏后抑制解除，面板正常弹出";
     }
 
-    private static string RuleOffStillSuppressedByD1(string outputDirectory)
+    private static string ExtraProcessListTriggersD3(string outputDirectory)
     {
-        using Form fullscreen = CreateFullscreenWindow();
-        var rules = new GameRules { TreatBorderlessFullscreenAsGame = false };
+        using Form normal = CreateWindow("HotkeyHud 普通窗口", new Rectangle(40, 40, 520, 200));
+
+        // 把自己的进程名塞进 D3 名单：这是配置项 extraGameProcesses 的端到端验证
+        string processName = Process.GetCurrentProcess().ProcessName;
+        var rules = new GameRules { GameProcessNames = new[] { processName } };
         using var hud = new HudApp(gameRules: rules);
 
         ReleaseAll();
-        FocusWindow(fullscreen.Handle);
+        FocusWindow(normal.Handle);
         Pump(200);
 
-        int quns = hud.NotificationState;
         bool suppressed = hud.GameSuppressed;
-        bool shown = LongPressShows(hud, fullscreen.Handle,
-            Path.Combine(outputDirectory, "s4-rule-off.png"));
+        string reason = hud.SuppressReason;
+        bool shown = LongPressShows(hud, normal.Handle,
+            Path.Combine(outputDirectory, "s4-d3-suppressed.png"));
         ReleaseAll();
 
-        // 实测：铺满屏幕的窗口会让 QUNS 报 2（忙），D1 先于 D5 命中。
-        // 所以关掉 D5 开关并不能让面板弹出来——这本身就是要留证的结论。
-        Require(quns is 2 or 3 or 4,
-            $"预期 QUNS 落在 2/3/4，实测 {quns}，本用例的前提不成立");
         Require(suppressed && !shown,
-            $"预期 D1 仍然抑制，实测 GameSuppressed={suppressed}、面板可见={shown}");
+            $"D3 名单未生效：GameSuppressed={suppressed}、面板可见={shown}、原因=\"{reason}\"");
+        Require(reason.StartsWith("D3", StringComparison.Ordinal),
+            $"命中原因应为 D3，实际 \"{reason}\"");
 
-        return $"关掉 D5 后仍被 D1 抑制：QUNS={quns}，原因=\"{hud.SuppressReason}\"；"
-               + "D5 在本机不会独立触发";
+        return $"名单命中 {processName}，面板未弹出；原因=\"{reason}\"";
     }
 
     private static string MeasureCaptureCost()

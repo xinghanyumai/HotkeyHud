@@ -1,4 +1,5 @@
 using System.Text;
+using HotkeyHud.App.Shell;
 #if DEBUG
 using HotkeyHud.App.Diagnostics;
 #endif
@@ -54,6 +55,18 @@ internal static class Program
                     options.Out ?? Path.Combine(Path.GetTempPath(), "hotkeyhud-suppression"));
             }
 
+            if (options.ShellTest)
+            {
+                return ShellTest.Run();
+            }
+
+            if (options.ProbeSingleInstance)
+            {
+                // 供 ShellTest 跨进程验证：能拿到锁退出 0，拿不到退出 3
+                using var probe = new SingleInstance();
+                return probe.TryAcquire() ? 0 : 3;
+            }
+
             if (options.Demo)
             {
                 return RunDemo(options.Capture);
@@ -61,7 +74,7 @@ internal static class Program
 #else
             _ = options; // Release 构建下诊断入口已编译剔除
 #endif
-            return RunInteractive();
+            return RunTray();
         }
         catch (Exception ex)
         {
@@ -71,12 +84,44 @@ internal static class Program
         }
     }
 
-    private static int RunInteractive()
+    private static int RunTray()
     {
         ApplicationConfiguration.Initialize();
-        using var hud = new HudApp();
+
+        using var instance = new SingleInstance();
+        if (!instance.TryAcquire())
+        {
+            ShowAlreadyRunning();
+            return 0;
+        }
+
+        using var shell = new ShellController();
+        shell.ExitRequested += Application.ExitThread;
         Application.Run(new ApplicationContext());
         return 0;
+    }
+
+    /// <summary>第二个实例：弹一次气泡就退出，不产生常驻进程。</summary>
+    private static void ShowAlreadyRunning()
+    {
+        using var icon = new NotifyIcon
+        {
+            Icon = SystemIcons.Information,
+            Text = "HotkeyHud",
+            Visible = true,
+        };
+
+        icon.BalloonTipTitle = "HotkeyHud 已在运行";
+        icon.BalloonTipText = "见系统托盘，这里不再启动第二个实例。";
+        icon.BalloonTipIcon = ToolTipIcon.Info;
+        icon.ShowBalloonTip(3000);
+
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        while (clock.ElapsedMilliseconds < 2500)
+        {
+            Application.DoEvents();
+            Thread.Sleep(50);
+        }
     }
 
 #if DEBUG
@@ -111,7 +156,8 @@ internal static class Program
 
     private sealed record Options(
         bool SelfTest, bool TypingTest, bool IntegrationTest, bool RenderGallery,
-        bool SuppressionTest, bool Demo, int Seconds, string? Capture, string? Out);
+        bool SuppressionTest, bool ShellTest, bool ProbeSingleInstance,
+        bool Demo, int Seconds, string? Capture, string? Out);
 
     private static Options ParseOptions(string[] args)
     {
@@ -120,6 +166,8 @@ internal static class Program
         bool integrationTest = false;
         bool renderGallery = false;
         bool suppressionTest = false;
+        bool shellTest = false;
+        bool probeSingleInstance = false;
         bool demo = false;
         int seconds = 30;
         string? capture = null;
@@ -152,6 +200,16 @@ internal static class Program
                 case "--suppression-test":
                     RequireDiagnosticsBuild(arg);
                     suppressionTest = true;
+                    break;
+
+                case "--shell-test":
+                    RequireDiagnosticsBuild(arg);
+                    shellTest = true;
+                    break;
+
+                case "--probe-single-instance":
+                    RequireDiagnosticsBuild(arg);
+                    probeSingleInstance = true;
                     break;
 
                 case "--demo":
@@ -193,7 +251,8 @@ internal static class Program
                     {
                         throw new ArgumentException(
                             $"未知参数 \"{arg}\"。可用：--selftest --typing-test --integration-test "
-                            + "--render-gallery --suppression-test --demo --seconds=N --capture=PATH --out=DIR"
+                            + "--render-gallery --suppression-test --shell-test --demo "
+                            + "--seconds=N --capture=PATH --out=DIR"
                             + "（注意值必须用 = 连接）");
                     }
 
@@ -201,7 +260,8 @@ internal static class Program
             }
         }
 
-        return new Options(selfTest, typingTest, integrationTest, renderGallery, suppressionTest, demo, seconds, capture, output);
+        return new Options(selfTest, typingTest, integrationTest, renderGallery, suppressionTest,
+            shellTest, probeSingleInstance, demo, seconds, capture, output);
     }
 
     /// <summary>只接受 <c>--name=value</c>；空格分隔形式一律落到「未知参数」分支报错。</summary>
