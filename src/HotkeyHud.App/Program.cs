@@ -42,6 +42,12 @@ internal static class Program
                 return IntegrationTest.Run();
             }
 
+            if (options.RenderGallery)
+            {
+                return RenderGallery.Run(
+                    options.Out ?? Path.Combine(Path.GetTempPath(), "hotkeyhud-gallery"));
+            }
+
             if (options.Demo)
             {
                 return RunDemo(options.Capture);
@@ -98,16 +104,19 @@ internal static class Program
 #endif
 
     private sealed record Options(
-        bool SelfTest, bool TypingTest, bool IntegrationTest, bool Demo, int Seconds, string? Capture);
+        bool SelfTest, bool TypingTest, bool IntegrationTest, bool RenderGallery,
+        bool Demo, int Seconds, string? Capture, string? Out);
 
     private static Options ParseOptions(string[] args)
     {
         bool selfTest = false;
         bool typingTest = false;
         bool integrationTest = false;
+        bool renderGallery = false;
         bool demo = false;
         int seconds = 30;
         string? capture = null;
+        string? output = null;
 
         foreach (string arg in args)
         {
@@ -126,6 +135,11 @@ internal static class Program
                 case "--integration-test":
                     RequireDiagnosticsBuild(arg);
                     integrationTest = true;
+                    break;
+
+                case "--render-gallery":
+                    RequireDiagnosticsBuild(arg);
+                    renderGallery = true;
                     break;
 
                 case "--demo":
@@ -153,18 +167,29 @@ internal static class Program
 
                         capture = capturePath;
                     }
+                    else if (TryReadValue(arg, "--out", out string? outputPath))
+                    {
+                        RequireDiagnosticsBuild(arg);
+                        if (string.IsNullOrWhiteSpace(outputPath))
+                        {
+                            throw new ArgumentException("--out 需要非空目录");
+                        }
+
+                        output = outputPath;
+                    }
                     else
                     {
                         throw new ArgumentException(
                             $"未知参数 \"{arg}\"。可用：--selftest --typing-test --integration-test "
-                            + "--demo --seconds=N --capture=PATH（注意值必须用 = 连接）");
+                            + "--render-gallery --demo --seconds=N --capture=PATH --out=DIR"
+                            + "（注意值必须用 = 连接）");
                     }
 
                     break;
             }
         }
 
-        return new Options(selfTest, typingTest, integrationTest, demo, seconds, capture);
+        return new Options(selfTest, typingTest, integrationTest, renderGallery, demo, seconds, capture, output);
     }
 
     /// <summary>只接受 <c>--name=value</c>；空格分隔形式一律落到「未知参数」分支报错。</summary>

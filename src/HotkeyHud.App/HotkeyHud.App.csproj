@@ -4,6 +4,11 @@
     <ProjectReference Include="..\HotkeyHud.Core\HotkeyHud.Core.csproj" />
   </ItemGroup>
 
+  <!-- 应用档案随 exe 一起输出，运行时从 BaseDirectory\Data\apps 读取 -->
+  <ItemGroup>
+    <Content Include="Data\apps\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>

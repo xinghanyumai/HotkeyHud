@@ -1,0 +1,22 @@
+{
+  "app": "winword",
+  "displayName": "Word",
+  "processNames": ["WINWORD.EXE"],
+  "shortcuts": [
+    { "keys": "Ctrl+K", "action": "插入超链接", "group": "插入" },
+    { "keys": "Ctrl+Enter", "action": "插入分页符", "group": "插入" },
+    { "keys": "Ctrl+L", "action": "左对齐", "group": "段落" },
+    { "keys": "Ctrl+E", "action": "居中", "group": "段落" },
+    { "keys": "Ctrl+R", "action": "右对齐", "group": "段落" },
+    { "keys": "Ctrl+J", "action": "两端对齐", "group": "段落" },
+    { "keys": "Ctrl+M", "action": "增加缩进", "group": "段落" },
+    { "keys": "Ctrl+Q", "action": "清除格式", "group": "段落" },
+    { "keys": "Ctrl+1", "action": "单倍行距", "group": "段落" },
+    { "keys": "Ctrl+2", "action": "双倍行距", "group": "段落" },
+    { "keys": "Ctrl+5", "action": "1.5 倍行距", "group": "段落" },
+    { "keys": "Ctrl+[", "action": "字号减小", "group": "字体" },
+    { "keys": "Ctrl+]", "action": "字号增大", "group": "字体" },
+    { "keys": "Ctrl+H", "action": "替换", "group": "编辑" },
+    { "keys": "Ctrl+G", "action": "定位", "group": "编辑" }
+  ]
+}

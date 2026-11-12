@@ -46,11 +46,13 @@ src/HotkeyHud.App/
   Platform/RawInputSource.cs  Raw Input 采集；同时是全程序唯一的时钟来源（NowMs）
   Platform/ForegroundWatcher.cs  前台窗口变化监听（SetWinEventHook）
   Platform/ForegroundProbe.cs    前台进程名查询（缓存 + Invalidate）
-  UI/OverlayForm.cs           分层覆盖窗（穿透 / 不抢焦点 / 不进 Alt+Tab）
-  Diagnostics/                自检、集成测试、压力测试，仅 Debug 构建编译
+  UI/OverlayForm.cs           分层覆盖窗：窗口、DIB、分层合成
+  UI/HudPanel.cs              面板布局与绘制（不碰 HWND），尺寸按内容算
+  Data/apps/*.json            5 份应用档案，随 exe 输出
+  Diagnostics/                自检、集成测试、渲染画廊，仅 Debug 构建编译
   HudApp.cs                   编排：Raw Input → 状态机 → 覆盖窗
   Program.cs                  入口 + 严格参数解析 + 崩溃日志
-tests/HotkeyHud.Tests/        §7 的 15 条规则用例
+tests/HotkeyHud.Tests/        §7 的 15 条规则用例 + Case16
 ```
 
 ## 构建与运行
@@ -73,16 +75,22 @@ dotnet run --project tests/HotkeyHud.Tests
 # ② S2.5 集成验收：真实注入按键，走 Raw Input → 状态机 → 覆盖窗全链路
 dotnet run --project src/HotkeyHud.App -- --integration-test
 
-# ③ S1 回归门禁：覆盖窗四条硬指标 + Raw Input 通路 + 内存三口径
+# ③ S3 渲染验收：输出 4 张面板截图 + 断言高亮不改尺寸、渲染 p95
+dotnet run --project src/HotkeyHud.App -- --render-gallery --out=<目录>
+
+# ④ S1 回归门禁：覆盖窗四条硬指标 + Raw Input 通路 + 内存三口径
 dotnet run --project src/HotkeyHud.App -- --selftest
 
-# ④ 进程内输入通路冒烟（跨进程真实键盘打字待人工复核，见「偏差」）
+# ⑤ 进程内输入通路冒烟（跨进程真实键盘打字待人工复核，见「偏差」）
 dotnet run --project src/HotkeyHud.App -- --typing-test --seconds=60
 ```
 
-全部以退出码表示失败数（0 = 全部通过）。`--selftest` / `--integration-test` / `--typing-test` /
-`--demo` 只在 Debug 构建存在，Release 下传入会以退出码 2 报错；未知参数与空格分隔的
-`--capture path` 同样报错退出，不会静默忽略。
+全部以退出码表示失败数（0 = 全部通过）。`--selftest` / `--integration-test` / `--render-gallery` /
+`--typing-test` / `--demo` 只在 Debug 构建存在，Release 下传入会以退出码 2 报错；未知参数与
+空格分隔的 `--capture path` 同样报错退出，不会静默忽略。
+
+**`--integration-test` 会抢前台**：它自己创建测试窗口并 `SetForegroundWindow`，运行期间不要操作电脑，
+否则用例会以「无法把目标窗口切到前台」失败。
 
 ### 时钟唯一来源
 
@@ -102,6 +110,30 @@ dotnet run --project src/HotkeyHud.App -- --typing-test --seconds=60
 
 即**注入路径下不产生自动重复**，状态机里的重复守卫目前是无害的防御性代码。物理键盘可能不同
 （重复由键盘类驱动生成），所以守卫保留。将来换输入源时重跑这条 INFO 即可判断它是否开始起作用。
+
+### 应用档案核对表
+
+每一条键位都必须能追溯到官方文档。**禁止凭印象写键位**——写错的键位比没有更糟，
+用户会照着按然后发现没反应。
+
+| 应用 | 文档 URL | 核对日期 | 核对人 | 条数 |
+|---|---|---|---|---|
+| Word | https://support.microsoft.com/en-us/office/keyboard-shortcuts-in-word-95ef89dd-7142-4b50-afb2-f762f663ceb2 | 2026-11-12 | 执行 Agent | 15 |
+| Chrome | https://support.google.com/chrome/answer/157179?hl=en&co=GENIE.Platform%3DDesktop | 2026-11-12 | 执行 Agent | 15 |
+| VS Code | https://code.visualstudio.com/docs/reference/default-keybindings | 2026-11-12 | 执行 Agent | 23 |
+| 文件资源管理器 | https://support.microsoft.com/en-us/windows/keyboard-shortcuts-in-windows-dcc61a57-8ff0-cffe-9796-cb9706c75eec | 2026-11-12 | 执行 Agent | 8 |
+| 记事本 | 同上页面的「Text editing shortcuts」章节（微软未提供记事本专属快捷键页） | 2026-11-12 | 执行 Agent | 9 |
+
+核对方式与已知限制：
+
+- **Word / VS Code / 文件资源管理器**：官方页表格直接可读，逐条对照录入。
+- **Chrome**：官方页表格由前端脚本折叠渲染，需带 `#zippy=` 锚点才能取到内容；已取到
+  「Tab & window」「Feature」「Address bar」「Webpage」四张表并逐条对照。
+- **记事本**：微软已不再维护「Keyboard shortcuts in apps」独立页（原链接跳回 Windows 总览页），
+  因此采用该总览页中明确标注适用于文本编辑器的「Text editing shortcuts」表。这些组合在记事本里
+  确实生效，但它们**不是记事本专属**，`Ctrl+G 定位行`、`Ctrl+E 查找` 等 Win11 新增项未收录。
+- 档案里只放**纯 Ctrl 单修饰键**的组合：`Ctrl+Shift+X` 之类双修饰键条目在 Ctrl 面板里本来就不显示，
+  收录进去只会虚增条数。
 
 ### 实测结果（2026-11-12，Windows 10/11 x64，屏幕 3120×2080）
 
@@ -137,6 +169,16 @@ $ dotnet run --project src/HotkeyHud.App -- --integration-test
 [PASS] Case10 S1 窗口属性保持不变 — LAYERED|TRANSPARENT|NOACTIVATE|TOOLWINDOW 全置位
 --- 通过 10，失败 0 ---
 
+$ dotnet run --project src/HotkeyHud.App -- --render-gallery --out=<目录>
+[PASS] Gallery01 5 份档案可加载 — ProfileCount = 5，Dropped = 0，LoadErrors = 0
+[PASS] Gallery02 正常态截图 — 01-normal.png 1080×604，10 条
+[PASS] Gallery03 高亮态截图 — 02-highlight.png 1080×604，10 条
+[PASS] Gallery04 空态截图 — 03-empty.png 1080×216，0 条
+[PASS] Gallery05 长列表截断 — 04-long-list.png 1080×656，20 条，应显示「还有 8 个未显示」
+[PASS] Gallery06 高亮不改变面板尺寸 — 1080×604 连按 5 个组合保持不变
+[PASS] Gallery07 单次渲染 p95 < 16ms — 全量重绘 p95 = 8.41 ms；高亮切换 p95 = 2.49 ms（40 次采样）
+--- 通过 7，失败 0 ---
+
 $ dotnet run --project src/HotkeyHud.App -- --selftest
 [PASS] 性能-空载内存三口径 — 私有工作集 5.9 MB / 提交大小 9.3 MB / 总工作集 35.2 MB
 [PASS] S1-A1 Raw Input 通路 — F24 按下=True 松开=True，共收到 600 个事件
@@ -156,8 +198,14 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 | 空载提交大小 | ≤ 45 MB | 9.3 MB |
 | WM_INPUT 回调 p50 / p99 | — | 0.039 / 0.555 ms |
 | 空闲 10s CPU 增量 | < 100 ms | 15.6 ms |
-| 按键到首帧 | ≤ 120 ms | 未打点（S3 面板渲染完成后测） |
+| 面板全量重绘 p95 | < 16 ms | 8.41 ms |
+| 面板高亮切换 p95 | < 16 ms | 2.49 ms |
+| 按键到首帧 | ≤ 120 ms | 未打点（含 dwell 300ms + 首帧渲染） |
 | 常驻句柄 | ≤ 500 | 未测（S5 托盘完成后测） |
+
+面板在 200% DPI 下是 1080×604 物理像素（= 540×302 逻辑像素）。高亮切换只重画高亮层：
+整帧重绘 8.4ms，每次按键都付这个代价会挤爆 16ms 预算，因此 `OverlayForm` 缓存了基图层
+（同一份模型引用 + 同尺寸 + 同 scale 时命中）。
 
 **变异测试**（确认断言不是恒真）：
 
@@ -190,6 +238,11 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 4. **`HotkeyHud.slnx` 而非 `.sln`**：.NET 10 SDK 的 `dotnet new sln` 默认生成 slnx 格式，功能等价。
 5. **新增 `Diagnostics/` 目录**（§三 未列）：验收要求「贴出命令 + 输出」，没有可执行的自检程序
    就交不出证据。该目录整体包在 `#if DEBUG` 内，不进入 Release。
+6. **面板视觉参数来自 S3 提示词而非规格 §6**：规格 §6 只有数据契约表，没有色值与尺寸；
+   圆角 14 / 底色 `#16181D` 92% / 键帽高 22 / 3 列 / 12 条上限这些数字全部取自
+   `docs/executor-s3-prompt.md` 的 §零 与 §2.2。见 [SPEC-GAP] 8。
+7. **动作文案压到 6 个汉字以内**：3 列 × 540 逻辑宽下，每格扣掉键帽只剩约 6 个汉字的空间，
+   更长的文案会被省略号截断。这不是布局缺陷，是列宽的必然结果——HUD 本就该短。
 
 非偏差，但需要记录的实现决定：
 
@@ -220,6 +273,8 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 | 5 | §3.1 | 未定义同一进程名出现在多个档案时的行为 | 先加载者占用，后来者整份跳过并记入 `LoadErrors` |
 | 6 | §3.1 | 未定义档案 JSON 损坏时的行为 | 跳过该档案并记入 `LoadErrors`，不让一份坏文件把程序拖垮；错误不静默 |
 | 7 | §5.3.2 | 只给了 `DwellMs` 的范围 80–5000，未说越界怎么处理；`FlashMs` 干脆没给范围 | 两者都按 80–5000 校验，越界抛 `ArgumentOutOfRangeException`（构造与赋值都校验） |
+| 8 | §6 | 只有数据契约表，没有任何视觉规格（圆角、底色、键帽、列数、条目上限） | 采用 `executor-s3-prompt.md` §零/§2.2 给出的数值，不改动 |
+| 9 | §6「UI 层不得自行过滤」 vs 12 条上限 | 「最多 12 条」必然要在某处截断，与「UI 不得过滤」字面冲突；`HudBuilder` 又被 S3 §2.3 禁止改动 | 截断放在渲染层 `HudPanel`，`HudModel.TotalCount` 保持完整，底部按 `TotalCount - 12` 显示「还有 N 个未显示」 |
 
 ## 进度
 
@@ -227,7 +282,7 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 |---|---|
 | S1 输入通路与「不干扰」 | 通过（含 5 项整改） |
 | S2 四条规则 | 通过（15/15 用例，含 4 项整改） |
-| S2.5 状态机接线 | 完成（集成 10/10，S1 回归 8/8） |
-| S3 数据与渲染 | 未开始 |
+| S2.5 状态机接线 | 通过（集成 10/10，含 2 项整改） |
+| S3 数据与渲染 | 完成（5 份档案 + §6 面板 + 4 张截图，单元 16/16、集成 10/10、自检 8/8） |
 | S4 游戏抑制接入 | 未开始 |
 | S5 工程化 | 未开始 |

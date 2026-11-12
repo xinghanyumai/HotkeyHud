@@ -2,6 +2,7 @@ using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
 using HotkeyHud.App.Platform;
+using HotkeyHud.Core;
 
 namespace HotkeyHud.App.UI;
 
@@ -9,6 +10,7 @@ namespace HotkeyHud.App.UI;
 /// 分层覆盖窗。三条硬性要求（坑 #2 / #9）：
 /// 不抢焦点（WS_EX_NOACTIVATE + SW_SHOWNOACTIVATE）、鼠标穿透（WS_EX_TRANSPARENT）、
 /// 不进 Alt+Tab 与任务栏（WS_EX_TOOLWINDOW）。
+/// <para>窗口与合成在这里，面板长什么样在 <see cref="HudPanel"/>。</para>
 /// </summary>
 public sealed class OverlayForm : Form
 {
@@ -21,6 +23,13 @@ public sealed class OverlayForm : Form
 
     private Bitmap? _canvas;
     private Graphics? _canvasGraphics;
+
+    // 基图层缓存：同一份模型的连续高亮切换只重画高亮，不整帧重绘
+    private Bitmap? _baseCanvas;
+    private HudModel? _baseModel;
+    private IReadOnlyList<HudPanel.PlacedItem>? _baseItems;
+    private int _baseWidth;
+    private float _baseScale;
 
     public OverlayForm()
     {
@@ -44,12 +53,131 @@ public sealed class OverlayForm : Form
         }
     }
 
-    /// <summary>显示面板但不激活、不抢焦点。</summary>
+    /// <summary>按 §6 规格渲染快捷键面板。尺寸由内容决定，位置在光标所在屏的下缘居中。</summary>
+    public void ShowModel(HudModel model, Combo? highlight)
+    {
+        Rectangle workArea = Screen.FromPoint(Cursor.Position).WorkingArea;
+        float scale = DpiScale();
+        Rectangle bounds = HudPanel.ComputeBounds(model, scale, workArea);
+        PresentModel(bounds, model, highlight, scale);
+    }
+
+    /// <summary>S1 自检用的最简显示：一块纯色圆角 + 一行文字。不要删，--selftest 依赖它。</summary>
     public void ShowNoActivate(Rectangle bounds, Color background, string label)
     {
-        EnsureDeviceResources(bounds.Width, bounds.Height);
-        Render(bounds.Width, bounds.Height, background, label);
+        Present(bounds, graphics => DrawDebugLabel(graphics, bounds.Width, bounds.Height, background, label));
+    }
 
+    public void HideOverlay()
+    {
+        if (IsHandleCreated)
+        {
+            NativeMethods.ShowWindow(Handle, NativeMethods.SW_HIDE);
+        }
+    }
+
+    /// <summary>最近一次呈现使用的窗口矩形，供截图与尺寸断言使用。</summary>
+    public Rectangle LastBounds { get; private set; }
+
+    protected override void WndProc(ref Message m)
+    {
+        switch (m.Msg)
+        {
+            case NativeMethods.WM_NCHITTEST:
+                m.Result = NativeMethods.HTTRANSPARENT;
+                return;
+            case NativeMethods.WM_MOUSEACTIVATE:
+                m.Result = NativeMethods.MA_NOACTIVATE;
+                return;
+            case NativeMethods.WM_ERASEBKGND:
+                m.Result = (IntPtr)1;
+                return;
+        }
+
+        base.WndProc(ref m);
+    }
+
+    // 内容全部经 UpdateLayeredWindow 提交，WinForms 自绘必须停用，否则会覆盖分层表面
+    protected override void OnPaint(PaintEventArgs e)
+    {
+    }
+
+    protected override void OnPaintBackground(PaintEventArgs e)
+    {
+    }
+
+    /// <summary>
+    /// 呈现面板。同一份模型的高亮切换只重画高亮层——整帧重绘要 12–15ms，
+    /// 每次按键都付这个代价会挤爆 §3.2 的 16ms 预算。
+    /// </summary>
+    private void PresentModel(Rectangle bounds, HudModel model, Combo? highlight, float scale)
+    {
+        LastBounds = bounds;
+        EnsureDeviceResources(bounds.Width, bounds.Height);
+        EnsureCanvas(bounds.Width, bounds.Height);
+
+        var graphics = _canvasGraphics!;
+        bool baseReusable = ReferenceEquals(_baseModel, model)
+                            && _baseItems is not null
+                            && _baseWidth == bounds.Width
+                            && Math.Abs(_baseScale - scale) < 0.001f;
+
+        if (baseReusable)
+        {
+            // SourceCopy：直接连同 alpha 一起拷，避免半透明像素二次混合
+            graphics.CompositingMode = CompositingMode.SourceCopy;
+            graphics.DrawImageUnscaled(_baseCanvas!, 0, 0);
+            graphics.CompositingMode = CompositingMode.SourceOver;
+        }
+        else
+        {
+            _baseItems = HudPanel.DrawBase(graphics, model, scale);
+            _baseModel = model;
+            _baseWidth = bounds.Width;
+            _baseScale = scale;
+
+            EnsureBaseCanvas(bounds.Width, bounds.Height);
+            using var baseGraphics = Graphics.FromImage(_baseCanvas!);
+            baseGraphics.CompositingMode = CompositingMode.SourceCopy;
+            baseGraphics.DrawImageUnscaled(_canvas!, 0, 0);
+        }
+
+        if (highlight is { } combo)
+        {
+            HudPanel.DrawHighlight(graphics, _baseItems!, combo, scale, bounds.Width);
+        }
+
+        CopyToDib(_canvas!, _dibBits, bounds.Width, bounds.Height);
+        PushLayered(bounds);
+        ShowNoActivateTopmost();
+    }
+
+    private void Present(Rectangle bounds, Action<Graphics> draw)
+    {
+        LastBounds = bounds;
+        EnsureDeviceResources(bounds.Width, bounds.Height);
+        EnsureCanvas(bounds.Width, bounds.Height);
+
+        var graphics = _canvasGraphics!;
+        graphics.Clear(Color.Transparent);
+        draw(graphics);
+
+        CopyToDib(_canvas!, _dibBits, bounds.Width, bounds.Height);
+        PushLayered(bounds);
+        ShowNoActivateTopmost();
+    }
+
+    private void ShowNoActivateTopmost()
+    {
+        NativeMethods.SetWindowPos(
+            Handle, NativeMethods.HWND_TOPMOST, 0, 0, 0, 0,
+            NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE
+            | NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW);
+        NativeMethods.ShowWindow(Handle, NativeMethods.SW_SHOWNOACTIVATE);
+    }
+
+    private void PushLayered(Rectangle bounds)
+    {
         IntPtr screenDc = NativeMethods.GetDC(IntPtr.Zero);
         if (screenDc == IntPtr.Zero)
         {
@@ -80,71 +208,54 @@ public sealed class OverlayForm : Form
         {
             NativeMethods.ReleaseDC(IntPtr.Zero, screenDc);
         }
-
-        // 几何只由 UpdateLayeredWindow 决定；这里只负责置顶与显示，不改位置和尺寸
-        NativeMethods.SetWindowPos(
-            Handle, NativeMethods.HWND_TOPMOST, 0, 0, 0, 0,
-            NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE
-            | NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW);
-        NativeMethods.ShowWindow(Handle, NativeMethods.SW_SHOWNOACTIVATE);
     }
 
-    public void HideOverlay()
+    /// <summary>DPI 缩放系数。取窗口所在显示器的 DPI，拿不到时按 96 处理。</summary>
+    private float DpiScale()
     {
-        if (IsHandleCreated)
+        uint dpi = NativeMethods.GetDpiForWindow(Handle);
+        if (dpi == 0)
         {
-            NativeMethods.ShowWindow(Handle, NativeMethods.SW_HIDE);
-        }
-    }
-
-    protected override void WndProc(ref Message m)
-    {
-        switch (m.Msg)
-        {
-            case NativeMethods.WM_NCHITTEST:
-                m.Result = NativeMethods.HTTRANSPARENT;
-                return;
-            case NativeMethods.WM_MOUSEACTIVATE:
-                m.Result = NativeMethods.MA_NOACTIVATE;
-                return;
-            case NativeMethods.WM_ERASEBKGND:
-                m.Result = (IntPtr)1;
-                return;
+            dpi = (uint)DeviceDpi;
         }
 
-        base.WndProc(ref m);
+        return dpi <= 0 ? 1f : dpi / 96f;
     }
 
-    // 内容全部经 UpdateLayeredWindow 提交，WinForms 自绘必须停用，否则会覆盖分层表面
-    protected override void OnPaint(PaintEventArgs e)
+    private void EnsureBaseCanvas(int width, int height)
     {
-    }
-
-    protected override void OnPaintBackground(PaintEventArgs e)
-    {
-    }
-
-    private void Render(int width, int height, Color background, string label)
-    {
-        if (_canvas is null || _canvas.Width != width || _canvas.Height != height)
+        if (_baseCanvas is not null && _baseCanvas.Width == width && _baseCanvas.Height == height)
         {
-            _canvasGraphics?.Dispose();
-            _canvas?.Dispose();
-            _canvas = new Bitmap(width, height, PixelFormat.Format32bppPArgb);
-            _canvasGraphics = Graphics.FromImage(_canvas);
-            _canvasGraphics.SmoothingMode = SmoothingMode.AntiAlias;
-            _canvasGraphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+            return;
         }
 
-        var g = _canvasGraphics!;
-        g.Clear(Color.Transparent);
+        _baseCanvas?.Dispose();
+        _baseCanvas = new Bitmap(width, height, PixelFormat.Format32bppPArgb);
+    }
 
+    private void EnsureCanvas(int width, int height)
+    {
+        if (_canvas is not null && _canvas.Width == width && _canvas.Height == height)
+        {
+            return;
+        }
+
+        _canvasGraphics?.Dispose();
+        _canvas?.Dispose();
+        _canvas = new Bitmap(width, height, PixelFormat.Format32bppPArgb);
+        _canvasGraphics = Graphics.FromImage(_canvas);
+        _canvasGraphics.SmoothingMode = SmoothingMode.AntiAlias;
+        _canvasGraphics.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAliasGridFit;
+    }
+
+    private static void DrawDebugLabel(Graphics graphics, int width, int height, Color background, string label)
+    {
         using (var path = RoundedRect(new Rectangle(0, 0, width, height), 12))
         using (var fill = new SolidBrush(background))
         using (var pen = new Pen(Color.FromArgb(90, 255, 255, 255), 1f))
         {
-            g.FillPath(fill, path);
-            g.DrawPath(pen, path);
+            graphics.FillPath(fill, path);
+            graphics.DrawPath(pen, path);
         }
 
         using (var font = new Font("Segoe UI", 13f, FontStyle.Regular, GraphicsUnit.Pixel))
@@ -155,10 +266,8 @@ public sealed class OverlayForm : Form
                    LineAlignment = StringAlignment.Center,
                })
         {
-            g.DrawString(label, font, brush, new RectangleF(0, 0, width, height), format);
+            graphics.DrawString(label, font, brush, new RectangleF(0, 0, width, height), format);
         }
-
-        CopyToDib(_canvas, _dibBits, width, height);
     }
 
     private static GraphicsPath RoundedRect(Rectangle bounds, int radius)
@@ -187,6 +296,14 @@ public sealed class OverlayForm : Form
             byte* src = (byte*)data.Scan0;
             byte* dst = (byte*)destination;
             long stride = data.Stride;
+
+            // 快路径：自上而下且行宽连续时一次拷完，省掉逐行调用开销
+            if (stride == rowBytes)
+            {
+                Buffer.MemoryCopy(src, dst, (long)rowBytes * height, (long)rowBytes * height);
+                return;
+            }
+
             bool bottomUp = stride < 0;
             long absStride = bottomUp ? -stride : stride;
 
@@ -279,6 +396,7 @@ public sealed class OverlayForm : Form
         {
             _canvasGraphics?.Dispose();
             _canvas?.Dispose();
+            _baseCanvas?.Dispose();
         }
 
         DestroyDeviceResources();

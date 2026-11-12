@@ -135,26 +135,32 @@ internal static class IntegrationTest
             KeyUp(VkC);
             Require(!hud.IsOverlayVisible, "按 Ctrl+C 后面板未立即收起（熟记名单未作用于闪烁路径）");
 
-            // 非熟记组合：高亮并显示对应动作，500ms 后自动收起
+            // 非熟记组合：高亮，且不得改变面板尺寸
             KeyUp(VkControl);
             Pump(150);
             PressAndArm(hud, target.Handle);
             PumpTracking(350, hud);
             Require(hud.IsOverlayVisible, "前置条件不成立：面板未重新显示");
 
+            var before = PanelRect(hud);
             KeyDown(VkK);
             Pump(80);
             KeyUp(VkK);
+
             Require(hud.IsOverlayVisible, "按 Ctrl+K 后面板应收起为高亮态，而不是消失");
-            Require(hud.CurrentLabel.Contains("测试动作 K", StringComparison.Ordinal),
-                $"高亮 label 未包含动作文案：\"{hud.CurrentLabel}\"");
+            Require(hud.HighlightedCombo == new Combo(Modifier.Ctrl, VkK),
+                $"高亮组合不符：{hud.HighlightedCombo?.ToString() ?? "null"}");
+
+            var after = PanelRect(hud);
+            Require(before == after,
+                $"高亮改变了面板尺寸：{before} → {after}（会重建 DIB 并闪烁）");
 
             Pump(550);
             Require(!hud.IsOverlayVisible, "闪烁 500ms 后面板应自动收起");
             KeyUp(VkControl);
             Pump(150);
 
-            return "Ctrl+C 立即收起；Ctrl+K 高亮显示动作并 500ms 后收起";
+            return $"Ctrl+C 立即收起；Ctrl+K 高亮 {after.Width}×{after.Height} 尺寸不变，500ms 后收起";
         });
 
         Case("Case06 前台切换立即收起面板", () =>
@@ -377,6 +383,12 @@ internal static class IntegrationTest
         Pump(100);
         Require(hud.State is HudState.Armed or HudState.Visible,
             $"按下 Ctrl 后状态机未进入 Armed（State={hud.State}）——输入事件未到达");
+    }
+
+    private static (int Left, int Top, int Width, int Height) PanelRect(HudApp hud)
+    {
+        NativeMethods.GetWindowRect(hud.Overlay.Handle, out NativeMethods.RECT rect);
+        return (rect.Left, rect.Top, rect.Width, rect.Height);
     }
 
     private static void KeyDown(int virtualKey)

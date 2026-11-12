@@ -1,0 +1,15 @@
+{
+  "app": "explorer",
+  "displayName": "文件资源管理器",
+  "processNames": ["explorer.exe"],
+  "shortcuts": [
+    { "keys": "Ctrl+N", "action": "打开新窗口", "group": "窗口" },
+    { "keys": "Ctrl+W", "action": "关闭标签页", "group": "窗口" },
+    { "keys": "Ctrl+T", "action": "打开新标签页", "group": "窗口" },
+    { "keys": "Ctrl+Tab", "action": "下一个标签页", "group": "窗口" },
+    { "keys": "Ctrl+L", "action": "聚焦地址栏", "group": "导航" },
+    { "keys": "Ctrl+E", "action": "选中搜索框", "group": "导航" },
+    { "keys": "Ctrl+F", "action": "选中搜索框", "group": "导航" },
+    { "keys": "Ctrl+D", "action": "删除到回收站", "group": "文件" }
+  ]
+}

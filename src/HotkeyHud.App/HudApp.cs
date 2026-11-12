@@ -2,8 +2,6 @@ using System.Diagnostics;
 using HotkeyHud.App.Platform;
 using HotkeyHud.App.UI;
 using HotkeyHud.Core;
-// WinForms 也导出了 Keys，这里显式指向 Core 的键位工具
-using KeyNames = HotkeyHud.Core.Keys;
 
 namespace HotkeyHud.App;
 
@@ -58,8 +56,11 @@ public sealed class HudApp : IDisposable
 
     public bool IsOverlayVisible { get; private set; }
 
-    /// <summary>面板当前显示的文字，供集成测试与调试观察。</summary>
+    /// <summary>面板当前显示的文字摘要（供集成测试断言，不参与渲染）。</summary>
     public string CurrentLabel { get; private set; } = string.Empty;
+
+    /// <summary>当前高亮的组合，无高亮为 null。</summary>
+    public Combo? HighlightedCombo { get; private set; }
 
     /// <summary>计时器是否在跑。空闲时必须为 false（§八 空载 CPU 要求）。</summary>
     public bool TimerRunning => _timer.Enabled;
@@ -85,13 +86,18 @@ public sealed class HudApp : IDisposable
             return;
         }
 
-        Render(Modifier.Ctrl, BuildLabel(Modifier.Ctrl));
+        // S1 自检与打字冒烟依赖这条最简渲染路径，S3 不改它
+        _overlay.ShowNoActivate(
+            PanelBounds(), Color.FromArgb(OverlayAlpha, 0x4C, 0x8D, 0xFF), "HUD · S1 调试");
+        IsOverlayVisible = true;
+        CurrentLabel = "HUD · S1 调试";
     }
 
     public void HideOverlay()
     {
         _overlay.HideOverlay();
         IsOverlayVisible = false;
+        HighlightedCombo = null;
     }
 
     private void OnInput(InputEvent evt)
@@ -136,66 +142,43 @@ public sealed class HudApp : IDisposable
             return;
         }
 
-        Render(modifier, BuildLabel(modifier));
+        // 仓库在启动时已 Reload，这里只查内存，不做 I/O（§六 禁止 3）
+        string processName = _probe.ProcessName;
+        string displayName = processName.Length > 0 ? processName : "未知进程";
+
+        _currentModel = HudBuilder.Build(
+            _repository.FindByProcess(processName), modifier, _known, displayName);
+
+        RenderModel(_currentModel, null);
     }
 
     private void OnComboFlashed(Combo combo)
     {
-        if (_machine.Suppressed)
+        if (_machine.Suppressed || _currentModel is null)
         {
             return;
         }
 
-        string keys = KeyNames.Format(combo);
-        string action = FindAction(keys);
-        Render(_machine.TriggerModifier, action.Length > 0 ? $"{keys} · {action}" : keys);
+        // 高亮只换颜色与背景，尺寸仍由同一份模型决定，不会重建 DIB
+        RenderModel(_currentModel, combo);
     }
 
     private void OnHideRequested()
     {
         _overlay.HideOverlay();
         IsOverlayVisible = false;
+        HighlightedCombo = null;
     }
 
-    private string BuildLabel(Modifier modifier)
+    private void RenderModel(HudModel model, Combo? highlight)
     {
-        string processName = _probe.ProcessName;
-        string displayName = processName.Length > 0 ? processName : "未知进程";
-
-        _currentModel = HudBuilder.Build(
-            _repository.FindByProcess(processName), modifier, _known);
-
-        return _currentModel.HasProfile
-            ? $"{_currentModel.AppName} · {_currentModel.TotalCount} 条 {modifier} 快捷键"
-            : $"未收录 {displayName}";
-    }
-
-    private string FindAction(string keys)
-    {
-        if (_currentModel is null)
-        {
-            return string.Empty;
-        }
-
-        foreach (HudGroup group in _currentModel.Groups)
-        {
-            foreach (HudItem item in group.Items)
-            {
-                if (string.Equals(item.Keys, keys, StringComparison.Ordinal))
-                {
-                    return item.Action;
-                }
-            }
-        }
-
-        return string.Empty;
-    }
-
-    private void Render(Modifier modifier, string label)
-    {
-        _overlay.ShowNoActivate(PanelBounds(), ColorFor(modifier), label);
+        _overlay.ShowModel(model, highlight);
         IsOverlayVisible = true;
-        CurrentLabel = label;
+        HighlightedCombo = highlight;
+
+        CurrentLabel = model.HasProfile
+            ? $"{model.AppName} · {model.TotalCount} 条 {model.Modifier} 快捷键"
+            : $"未收录 {model.AppName}";
     }
 
     /// <summary>§3.2 计时器按需启停：只有 Armed / Flashing 需要 tick，Idle 必须停。</summary>
@@ -227,15 +210,6 @@ public sealed class HudApp : IDisposable
             420,
             180);
     }
-
-    /// <summary>规格 §6 的强调色：Ctrl 蓝 / Alt 橙 / Shift 绿 / Win 青。</summary>
-    private static Color ColorFor(Modifier modifier) => modifier switch
-    {
-        Modifier.Alt => Color.FromArgb(OverlayAlpha, 0xFF, 0x9F, 0x45),
-        Modifier.Shift => Color.FromArgb(OverlayAlpha, 0x3D, 0xDC, 0x97),
-        Modifier.Win => Color.FromArgb(OverlayAlpha, 0x4C, 0xC9, 0xF0),
-        _ => Color.FromArgb(OverlayAlpha, 0x4C, 0x8D, 0xFF),
-    };
 
     public void Dispose()
     {
