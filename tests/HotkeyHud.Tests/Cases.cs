@@ -28,6 +28,7 @@ internal static class Cases
         Program.Run("Case13 发行平台目录抑制", Case13_PlatformPathSuppressed);
         Program.Run("Case14 普通窗口不抑制", Case14_NormalWindowNotSuppressed);
         Program.Run("Case15 前台窗口切换立即收起", Case15_ForegroundChangedHides);
+        Program.Run("Case16 前台切换后修饰键状态被清空", Case16_ForegroundChangeClearsModifiers);
     }
 
     // ---------------- §5 状态机 ----------------
@@ -356,8 +357,32 @@ internal static class Cases
         Check.Equal(1, shows, "前台切换后阻塞应可解除，否则一次丢失的 key-up 会让 HUD 永久失效");
     }
 
-    // ---------------- 辅助 ----------------
+    private static void Case16_ForegroundChangeClearsModifiers()
+    {
+        var sm = new TriggerStateMachine();
+        int shows = 0;
+        sm.ShowRequested += _ => shows++;
 
+        // 按住 Ctrl 进入 Armed
+        sm.OnKey(new KeyEvent(Keys.VkControl, true, 0));
+        Check.Equal(HudState.Armed, sm.State, "前置条件：应处于 Armed");
+
+        // 前台切换：物理键状态不可知，修饰键也一并视为松开
+        sm.OnForegroundChanged();
+        Check.Equal(HudState.Idle, sm.State, "前台切换后应回到 Idle");
+
+        // 这一次 key-up 在真实场景里可能永远收不到；即使收到也不能出错
+        sm.OnKey(new KeyEvent(Keys.VkControl, false, 50));
+
+        // 再长按仍能正常弹出
+        sm.OnKey(new KeyEvent(Keys.VkControl, true, 100));
+        sm.OnTick(400);
+
+        Check.Equal(1, shows, "修饰键状态被清空后，重新长按应能弹出");
+        Check.Equal(HudState.Visible, sm.State, "应进入 Visible");
+    }
+
+    // ---------------- 辅助 ----------------
     private static AppShortcutProfile Profile(
         string app, string displayName, params ShortcutEntry[] shortcuts)
         => new()

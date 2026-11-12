@@ -144,7 +144,9 @@ public sealed class TriggerStateMachine
 
     public void OnForegroundChanged()
     {
-        // 前台变了，之前按住的非修饰键一律视为已松开：漏掉一次 key-up 不该造成永久阻塞
+        // 前台变了，物理键状态本来就不可知：修饰键与非修饰键一律视为已松开。
+        // 否则系统真丢一次 Ctrl 的 key-up，blockedUntilRelease 永不解除，HUD 会彻底失效且无提示。
+        _heldModifiers = Modifier.None;
         _heldNonModifierKeys.Clear();
         CollapseIfActive(block: false);
         TryUnblock();
