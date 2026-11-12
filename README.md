@@ -125,14 +125,14 @@ $ dotnet run --project tests/HotkeyHud.Tests
 --- 通过 15，失败 0 ---
 
 $ dotnet run --project src/HotkeyHud.App -- --integration-test
-[PASS] Case01 按住 100ms 面板不出现 — 可见=False
+[PASS] Case01 按住 100ms 面板不出现 — State=Armed，可见=False
 [PASS] Case02 按住 400ms 面板出现且标题正确 — label="HudTestApp · 2 条 Ctrl 快捷键"
 [PASS] Case03 松开触发键面板消失 — 可见=False
-[PASS] Case04 短按组合全程不弹面板 — 期间从未出现
-[PASS] Case05 熟记组合立即收起面板 — Ctrl+C 后 40ms 内已收起
+[PASS] Case04 短按组合全程不弹面板 — Ctrl 累计按住 460ms，面板从未出现
+[PASS] Case05 熟记组合立即收起、非熟记组合高亮 — Ctrl+C 立即收起；Ctrl+K 高亮显示动作并 500ms 后收起
 [PASS] Case06 前台切换立即收起面板 — 切换后 200ms 内已收起
 [PASS] Case07 未收录应用显示「未收录」 — label="未收录 HotkeyHud.App.exe"
-[PASS] Case08 手动暂停时长按不弹面板 — 暂停期间从未出现
+[PASS] Case08 手动暂停时长按不弹面板 — 期间收到 1 个输入事件，面板从未出现
 [PASS] Case09 空闲 10 秒 CPU 增量 < 100ms — CPU 增量 15.6 ms，计时器已停
 [PASS] Case10 S1 窗口属性保持不变 — LAYERED|TRANSPARENT|NOACTIVATE|TOOLWINDOW 全置位
 --- 通过 10，失败 0 ---
@@ -168,15 +168,27 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 | 长按判定 `>=` 改成 `>` | 单元 Case02 FAIL，Case01 仍 PASS |
 | 删除「修饰键自动重复守卫」 | 单元 Case02 FAIL（面板被打掉） |
 | 解除阻塞时不看非修饰键是否按住 | 单元 Case05 FAIL |
+| 删除「前台切换清空非修饰键」 | 单元 Case15 FAIL（阻塞永不解除） |
 | `OnTick` 改用 `Environment.TickCount64`（时钟不同源） | 集成 Case01 FAIL（100ms 就弹面板） |
+| Armed 时按非修饰键不取消 | 单元 Case04 + 集成 Case04 同时 FAIL |
+| 不接 `ComboFlashed` | 集成 Case05 FAIL（高亮 label 无动作文案） |
 | S1：`UpdateLayeredWindow` 尺寸改 300×300 | S1-E FAIL，退出码 1 |
+
+> 注意：变异之间会互相掩盖。同时删掉「非修饰键取消」和「前台清空非修饰键」时，Case15 反而通过——
+> 因为取消本身失效后阻塞根本没建立。判断某条断言是否有效，必须单独施加对应变异。
 
 ## 与规格的偏差
 
 1. **验收①「记事本连续打字 5 分钟」被降级为 60 秒进程内 TextBox 注入测试**。理由：无人值守环境
    无法保证 5 分钟不被打断，跨进程读取记事本文本不可靠。**未覆盖跨进程真实键盘，仍需人工补测。**
-2. **`HotkeyHud.slnx` 而非 `.sln`**：.NET 10 SDK 的 `dotnet new sln` 默认生成 slnx 格式，功能等价。
-3. **新增 `Diagnostics/` 目录**（§三 未列）：验收要求「贴出命令 + 输出」，没有可执行的自检程序
+2. **§3.3 默认方案 A 是「静默不弹」，本实现恒显示「未收录 X」一行**。理由：S2.5 任务书 §3.4
+   明确要求该 label；`showEmptyState` 开关留到 S5 配置阶段再做，现阶段不做开关。
+3. **集成测试 Case10 用「S1 窗口属性不变」代替「跑一遍 `--selftest`」**。理由：selftest 是独立
+   进程入口，门禁里已单独执行（§五 第 3 条）；在集成测试里再起一个进程既慢又会抢 Raw Input。
+   Case10 改为直接断言 `WS_EX_LAYERED|TRANSPARENT|NOACTIVATE|TOOLWINDOW` 仍全置位，
+   防的是「S2.5 接线时顺手改坏 S1 属性」这类回归。
+4. **`HotkeyHud.slnx` 而非 `.sln`**：.NET 10 SDK 的 `dotnet new sln` 默认生成 slnx 格式，功能等价。
+5. **新增 `Diagnostics/` 目录**（§三 未列）：验收要求「贴出命令 + 输出」，没有可执行的自检程序
    就交不出证据。该目录整体包在 `#if DEBUG` 内，不进入 Release。
 
 非偏差，但需要记录的实现决定：

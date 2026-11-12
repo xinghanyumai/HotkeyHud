@@ -340,6 +340,20 @@ internal static class Cases
 
         Check.Equal(1, hides, "前台切换应立即收起");
         Check.Equal(HudState.Idle, sm.State, "应回到 Idle");
+
+        // S2 整改第 2 项：前台切换会清空非修饰键，漏掉一次 key-up 不该造成永久阻塞
+        var blocked = new TriggerStateMachine();
+        int shows = 0;
+        blocked.ShowRequested += _ => shows++;
+
+        blocked.OnKey(new KeyEvent(Keys.VkControl, true, 0));
+        blocked.OnKey(new KeyEvent(VkC, true, 60)); // 取消并阻塞
+        blocked.OnForegroundChanged();              // 非修饰键一律视为已松开
+        blocked.OnKey(new KeyEvent(Keys.VkControl, false, 100));
+        blocked.OnKey(new KeyEvent(Keys.VkControl, true, 200));
+        blocked.OnTick(500);
+
+        Check.Equal(1, shows, "前台切换后阻塞应可解除，否则一次丢失的 key-up 会让 HUD 永久失效");
     }
 
     // ---------------- 辅助 ----------------

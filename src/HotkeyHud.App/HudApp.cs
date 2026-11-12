@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using HotkeyHud.App.Platform;
 using HotkeyHud.App.UI;
 using HotkeyHud.Core;
@@ -36,9 +37,10 @@ public sealed class HudApp : IDisposable
                            ?? Path.Combine(AppContext.BaseDirectory, "Data", "apps");
 
         _repository = new ShortcutRepository(directory);
+        // 先建会抛异常的那个，避免它失败时已经占着 Raw Input 窗口与 HGlobal
+        _watcher = new ForegroundWatcher();
         _input = new RawInputSource();
         _overlay = new OverlayForm();
-        _watcher = new ForegroundWatcher();
         _machine = new TriggerStateMachine { FlashPredicate = _known.AllowFlash };
         _timer = new System.Windows.Forms.Timer { Interval = TimerIntervalMs };
 
@@ -115,8 +117,16 @@ public sealed class HudApp : IDisposable
 
     private void OnTimerTick(object? sender, EventArgs e)
     {
-        _machine.OnTick(_input.NowMs);
-        SyncTimer();
+        // 计时器回调抛异常会变成 WinForms 未处理异常，整程序退出
+        try
+        {
+            _machine.OnTick(_input.NowMs);
+            SyncTimer();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[HotkeyHud] tick 异常：{ex}");
+        }
     }
 
     private void OnShowRequested(Modifier modifier)
@@ -150,12 +160,14 @@ public sealed class HudApp : IDisposable
     private string BuildLabel(Modifier modifier)
     {
         string processName = _probe.ProcessName;
+        string displayName = processName.Length > 0 ? processName : "未知进程";
+
         _currentModel = HudBuilder.Build(
             _repository.FindByProcess(processName), modifier, _known);
 
         return _currentModel.HasProfile
             ? $"{_currentModel.AppName} · {_currentModel.TotalCount} 条 {modifier} 快捷键"
-            : $"未收录 {processName}";
+            : $"未收录 {displayName}";
     }
 
     private string FindAction(string keys)

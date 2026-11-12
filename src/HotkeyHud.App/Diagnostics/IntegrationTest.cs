@@ -18,6 +18,7 @@ internal static class IntegrationTest
 {
     private const int VkControl = 0x11;
     private const int VkC = 0x43;
+    private const int VkK = 0x4B;
     private const int IdleSampleMs = 10_000;
     private const int CpuBudgetMs = 100;
 
@@ -68,10 +69,14 @@ internal static class IntegrationTest
 
         Case("Case01 按住 100ms 面板不出现", () =>
         {
+            ReleaseAll();
+            FocusWindow(target.Handle);
             KeyDown(VkControl);
             Pump(100);
+            Require(hud.State == HudState.Armed,
+                $"按下 Ctrl 后状态机未进入 Armed（State={hud.State}）——输入事件未到达");
             Require(!hud.IsOverlayVisible, "100ms 时面板已经出现，300ms 阈值未生效");
-            return $"可见={hud.IsOverlayVisible}";
+            return $"State={hud.State}，可见=False";
         });
 
         Case("Case02 按住 400ms 面板出现且标题正确", () =>
@@ -97,31 +102,59 @@ internal static class IntegrationTest
 
         Case("Case04 短按组合全程不弹面板", () =>
         {
+            ReleaseAll();
+            FocusWindow(target.Handle);
+
             bool everVisible = false;
             KeyDown(VkControl);
             everVisible |= PumpTracking(60, hud);
             KeyDown(VkC);
-            everVisible |= PumpTracking(40, hud);
+
+            // 关键：按下 C 之后 Ctrl 继续按住 400ms，累计 460ms 已远超 300ms 阈值。
+            // 若「非修饰键取消 Armed」失效，面板必然在这段里出现——这样才不是重复 Case03。
+            everVisible |= PumpTracking(400, hud);
+
             KeyUp(VkC);
             KeyUp(VkControl);
-            everVisible |= PumpTracking(350, hud);
-            Require(!everVisible, "Ctrl+C 短按期间面板出现过");
-            return "期间从未出现";
+            everVisible |= PumpTracking(150, hud);
+
+            Require(!everVisible, "Ctrl 按住超过阈值后面板出现，说明按 C 没有取消 Armed");
+            return "Ctrl 累计按住 460ms，面板从未出现";
         });
 
-        Case("Case05 熟记组合立即收起面板", () =>
+        Case("Case05 熟记组合立即收起、非熟记组合高亮", () =>
         {
             PressAndArm(hud, target.Handle);
             PumpTracking(350, hud);
             Require(hud.IsOverlayVisible,
                 $"前置条件不成立：面板未显示（State={hud.State}，计时器={hud.TimerRunning}）");
+
+            // 熟记组合：立即收起，不进入闪烁
             KeyDown(VkC);
             Pump(40);
             KeyUp(VkC);
             Require(!hud.IsOverlayVisible, "按 Ctrl+C 后面板未立即收起（熟记名单未作用于闪烁路径）");
+
+            // 非熟记组合：高亮并显示对应动作，500ms 后自动收起
             KeyUp(VkControl);
             Pump(150);
-            return "Ctrl+C 后 40ms 内已收起";
+            PressAndArm(hud, target.Handle);
+            PumpTracking(350, hud);
+            Require(hud.IsOverlayVisible, "前置条件不成立：面板未重新显示");
+
+            KeyDown(VkK);
+            Pump(80);
+            KeyUp(VkK);
+            Require(hud.IsOverlayVisible, "按 Ctrl+K 后面板应收起为高亮态，而不是消失");
+            Require(hud.CurrentLabel.Contains("测试动作 K", StringComparison.Ordinal),
+                $"高亮 label 未包含动作文案：\"{hud.CurrentLabel}\"");
+
+            Pump(550);
+            Require(!hud.IsOverlayVisible, "闪烁 500ms 后面板应自动收起");
+            KeyUp(VkControl);
+            Pump(150);
+
+            return "Ctrl+C 立即收起；Ctrl+K 高亮显示动作并 500ms 后收起";
         });
 
         Case("Case06 前台切换立即收起面板", () =>
@@ -176,14 +209,21 @@ internal static class IntegrationTest
         Case("Case08 手动暂停时长按不弹面板", () =>
         {
             hud.Suppressed = true;
+            long receivedBefore = hud.Input.ReceivedCount;
+
             KeyDown(VkControl);
             bool everVisible = PumpTracking(400, hud);
+            long receivedAfter = hud.Input.ReceivedCount;
+
             KeyUp(VkControl);
             Pump(150);
             hud.Suppressed = false;
 
+            // 没有这一步，「面板未出现」可能只是输入根本没到达——断言会变成恒真
+            Require(receivedAfter > receivedBefore,
+                "暂停期间没有收到任何 Raw Input 事件——输入未到达，本用例无意义");
             Require(!everVisible, "手动暂停期间面板仍然出现");
-            return "暂停期间从未出现";
+            return $"期间收到 {receivedAfter - receivedBefore} 个输入事件，面板从未出现";
         });
 
         Case("Case09 空闲 10 秒 CPU 增量 < 100ms", () =>
@@ -328,6 +368,10 @@ internal static class IntegrationTest
     private static void PressAndArm(HudApp hud, IntPtr targetHandle)
     {
         ReleaseAll();
+        Require(hud.State == HudState.Idle && !hud.TimerRunning,
+            $"松开按键后状态机未回到 Idle（State={hud.State}，计时器={hud.TimerRunning}）"
+            + "——上一个用例的按键状态污染了本用例");
+
         FocusWindow(targetHandle);
         KeyDown(VkControl);
         Pump(100);
@@ -344,6 +388,7 @@ internal static class IntegrationTest
     private static void ReleaseAll()
     {
         KeyUp(VkC);
+        KeyUp(VkK);
         KeyUp(VkControl);
         Pump(80);
     }
