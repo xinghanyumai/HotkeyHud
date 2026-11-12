@@ -41,6 +41,7 @@ public sealed class OverlayForm : Form
     private int _fadeFrame;
     private bool _isVisible;
     private HudModel? _lastModel;
+    private IntPtr _anchorMonitor;
     private Combo? _lastHighlight;
 
     public OverlayForm(Func<bool>? animationsEnabled = null)
@@ -89,7 +90,8 @@ public sealed class OverlayForm : Form
     /// </summary>
     public void ShowModel(HudModel model, Combo? highlight)
     {
-        (Rectangle bounds, float scale) = ResolveBounds(model);
+        (Rectangle bounds, float scale, IntPtr monitor) = ResolveBounds(model);
+        _anchorMonitor = monitor;
         PresentModel(bounds, model, highlight, scale);
     }
 
@@ -104,23 +106,25 @@ public sealed class OverlayForm : Form
             return false;
         }
 
-        (Rectangle bounds, float scale) = ResolveBounds(_lastModel);
-        if (bounds == LastBounds)
+        // 锚定在显示时定一次：同屏内移动光标不再上下跳，只有换屏才重锚
+        (Rectangle bounds, float scale, IntPtr monitor) = ResolveBounds(_lastModel);
+        if (monitor == _anchorMonitor)
         {
             return false;
         }
 
+        _anchorMonitor = monitor;
         PresentModel(bounds, _lastModel, _lastHighlight, scale);
         return true;
     }
 
-    private (Rectangle Bounds, float Scale) ResolveBounds(HudModel model)
+    private (Rectangle Bounds, float Scale, IntPtr Monitor) ResolveBounds(HudModel model)
     {
         Point cursor = Cursor.Position;
         MonitorInfo monitor = ScreenAnchor.Pick(EnumerateMonitors(), cursor);
         float scale = monitor.Scale;
         Size size = HudPanel.Measure(model, scale, monitor.WorkArea.Width);
-        return (ScreenAnchor.Anchor(monitor, size, cursor), scale);
+        return (ScreenAnchor.Anchor(monitor, size, cursor), scale, monitor.Handle);
     }
 
     /// <summary>把 WinForms 的屏幕表补上每屏 DPI。GetDpiForMonitor 拿的是「该屏」的缩放，与窗口当前在哪无关。</summary>

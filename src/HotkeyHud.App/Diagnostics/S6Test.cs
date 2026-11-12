@@ -101,13 +101,17 @@ internal static class S6Test
 
             // 光标在下半部 → 贴上缘
             SetCursor(new Point(workArea.X + workArea.Width / 2, workArea.Y + workArea.Height * 3 / 4));
+            // 同屏内移动光标：锚定已定，不应上下跳
             bool moved = overlay.RefreshAnchor();
+            Require(!moved, "同屏内移动光标不应重新贴边（锚定在显示时定一次）");
+
+            // 重新显示才按新光标位置贴边
+            overlay.ShowModel(model, null);
             Pump(200);
             int upper = overlay.LastBounds.Y;
             Capture(overlay, Path.Combine(outputDirectory, "s6-anchor-top.png"));
 
-            Require(moved, "光标换到下半屏后 RefreshAnchor 没有报告位置变化");
-            Require(lower > workArea.Y + workArea.Height / 2,
+                        Require(lower > workArea.Y + workArea.Height / 2,
                 $"光标在上半屏时应贴下缘，实际 y={lower}（工作区 {workArea}）");
             Require(upper < workArea.Y + workArea.Height / 2,
                 $"光标在下半屏时应贴上缘，实际 y={upper}");
