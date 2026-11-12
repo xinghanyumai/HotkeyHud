@@ -64,6 +64,15 @@ internal static class HudPanel
         FormatFlags = StringFormatFlags.NoWrap,
     };
 
+    // 键帽被 KeycapMaxRatio 限宽时必须省略而不是硬裁，否则窄工作区下会看到半截文字
+    private static readonly StringFormat CenteredEllipsis = new()
+    {
+        Alignment = StringAlignment.Center,
+        LineAlignment = StringAlignment.Center,
+        Trimming = StringTrimming.EllipsisCharacter,
+        FormatFlags = StringFormatFlags.NoWrap,
+    };
+
     private static readonly StringFormat LeftMiddle = new()
     {
         Trimming = StringTrimming.EllipsisCharacter,
@@ -168,7 +177,7 @@ internal static class HudPanel
         return placed;
     }
 
-    /// <summary>只画高亮：行背景提亮 + 左侧 2px 竖条。不改变任何尺寸。</summary>
+    /// <summary>只画高亮：行背景提亮 + 2px 竖条。不改变任何尺寸。</summary>
     public static void DrawHighlight(
         Graphics graphics, IReadOnlyList<PlacedItem> placed, Combo combo, float scale, int panelWidth)
     {
@@ -181,7 +190,8 @@ internal static class HudPanel
         }
 
         graphics.FillRectangle(RowHighlightBrush, 0f, match.RowY, panelWidth, match.RowHeight);
-        graphics.FillRectangle(AccentBrushOf(combo.Modifiers), 0f, match.RowY, 2f * scale, match.RowHeight);
+        // 竖条放在命中格子的左缘而不是面板左缘：3 列同一行有 3 条时，放面板边缘会分不清命中的是哪个
+        graphics.FillRectangle(AccentBrushOf(combo.Modifiers), match.CellX, match.RowY, 2f * scale, match.RowHeight);
     }
 
     // ---------------- 头部 ----------------
@@ -265,7 +275,7 @@ internal static class HudPanel
                     graphics.DrawPath(KeycapPen, keycapPath);
                 }
 
-                graphics.DrawString(items[i].Keys, keyFont, TextPrimaryBrush, keycap, Centered);
+                graphics.DrawString(items[i].Keys, keyFont, TextPrimaryBrush, keycap, CenteredEllipsis);
 
                 float textX = keycap.Right + 6f * scale;
                 graphics.DrawString(
@@ -273,7 +283,7 @@ internal static class HudPanel
                     new RectangleF(textX, cellY, Math.Max(10f, cellX + columnWidth - textX), RowHeight * scale),
                     LeftMiddle);
 
-                placed.Add(new PlacedItem(items[i].Keys, cellY, RowHeight * scale));
+                placed.Add(new PlacedItem(items[i].Keys, cellY, RowHeight * scale, cellX, columnWidth));
             }
 
             y += RowsOf(items.Count) * RowHeight * scale;
@@ -284,26 +294,29 @@ internal static class HudPanel
 
     // ---------------- 底部与空态 ----------------
 
+    /// <summary>底部提示文案。抽成公开方法是为了让验收能断言文本本身，而不是只截图看。</summary>
+    public static string FooterText(HudModel model)
+    {
+        int hidden = Math.Max(0, model.TotalCount - MaxVisibleItems);
+        string modifierName = model.Modifier == Modifier.None ? "修饰键" : model.Modifier.ToString();
+        string tail = $"松开 {modifierName} 隐藏";
+        return hidden > 0 ? $"还有 {hidden} 个未显示 · {tail}" : tail;
+    }
+
     private static void DrawFooter(
         Graphics graphics, HudModel model, float scale, float x, float y, float contentWidth)
     {
         graphics.DrawLine(DividerPen, x, y + 4f * scale, x + contentWidth, y + 4f * scale);
 
-        int hidden = Math.Max(0, model.TotalCount - MaxVisibleItems);
-        string modifierName = model.Modifier == Modifier.None ? "" : model.Modifier.ToString();
-        string text = hidden > 0
-            ? $"还有 {hidden} 个未显示 · 松开 {modifierName} 隐藏"
-            : $"松开 {modifierName} 隐藏";
-
         graphics.DrawString(
-            text, FontOf(11f * scale), TextSecondaryBrush,
+            FooterText(model), FontOf(11f * scale), TextSecondaryBrush,
             new RectangleF(x, y + 8f * scale, contentWidth, 16f * scale), LeftMiddle);
     }
 
     private static void DrawEmptyBody(
         Graphics graphics, HudModel model, float scale, float x, float y, float contentWidth)
     {
-        string modifierName = model.Modifier == Modifier.None ? "" : model.Modifier.ToString();
+        string modifierName = model.Modifier == Modifier.None ? "修饰键" : model.Modifier.ToString();
         string text = model.HasProfile
             ? $"该应用没有 {modifierName} 组合的快捷键数据"
             : $"未收录 {model.AppName}";
@@ -388,14 +401,16 @@ internal static class HudPanel
         return path;
     }
 
-    /// <summary>一个已排版的条目：键文本 + 它所在行的纵向范围，供高亮定位。</summary>
+    /// <summary>一个已排版的条目：键文本 + 它所在行与格子的范围，供高亮定位。</summary>
     internal sealed class PlacedItem
     {
-        public PlacedItem(string keys, float rowY, float rowHeight)
+        public PlacedItem(string keys, float rowY, float rowHeight, float cellX, float cellWidth)
         {
             Keys = keys;
             RowY = rowY;
             RowHeight = rowHeight;
+            CellX = cellX;
+            CellWidth = cellWidth;
         }
 
         public string Keys { get; }
@@ -403,5 +418,9 @@ internal static class HudPanel
         public float RowY { get; }
 
         public float RowHeight { get; }
+
+        public float CellX { get; }
+
+        public float CellWidth { get; }
     }
 }

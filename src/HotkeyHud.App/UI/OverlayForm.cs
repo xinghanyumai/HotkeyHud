@@ -56,10 +56,17 @@ public sealed class OverlayForm : Form
     /// <summary>按 §6 规格渲染快捷键面板。尺寸由内容决定，位置在光标所在屏的下缘居中。</summary>
     public void ShowModel(HudModel model, Combo? highlight)
     {
+        // 同一份模型 = 同一个面板会话：几何必须锁死。
+        // 否则光标跨到别的显示器时，高亮那一帧会算出不同的 bounds，触发 DIB 重建并闪一下（§3.1）。
+        if (ReferenceEquals(_baseModel, model) && _baseItems is not null)
+        {
+            PresentModel(LastBounds, model, highlight, _baseScale);
+            return;
+        }
+
         Rectangle workArea = Screen.FromPoint(Cursor.Position).WorkingArea;
         float scale = DpiScale();
-        Rectangle bounds = HudPanel.ComputeBounds(model, scale, workArea);
-        PresentModel(bounds, model, highlight, scale);
+        PresentModel(HudPanel.ComputeBounds(model, scale, workArea), model, highlight, scale);
     }
 
     /// <summary>S1 自检用的最简显示：一块纯色圆角 + 一行文字。不要删，--selftest 依赖它。</summary>
@@ -78,6 +85,9 @@ public sealed class OverlayForm : Form
 
     /// <summary>最近一次呈现使用的窗口矩形，供截图与尺寸断言使用。</summary>
     public Rectangle LastBounds { get; private set; }
+
+    /// <summary>最近一次实际画出来的条目数（12 条上限的验收凭据）。</summary>
+    public int LastItemCount => _baseItems?.Count ?? 0;
 
     protected override void WndProc(ref Message m)
     {

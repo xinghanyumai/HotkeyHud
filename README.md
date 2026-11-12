@@ -174,9 +174,9 @@ $ dotnet run --project src/HotkeyHud.App -- --render-gallery --out=<目录>
 [PASS] Gallery02 正常态截图 — 01-normal.png 1080×604，10 条
 [PASS] Gallery03 高亮态截图 — 02-highlight.png 1080×604，10 条
 [PASS] Gallery04 空态截图 — 03-empty.png 1080×216，0 条
-[PASS] Gallery05 长列表截断 — 04-long-list.png 1080×656，20 条，应显示「还有 8 个未显示」
-[PASS] Gallery06 高亮不改变面板尺寸 — 1080×604 连按 5 个组合保持不变
-[PASS] Gallery07 单次渲染 p95 < 16ms — 全量重绘 p95 = 8.41 ms；高亮切换 p95 = 2.49 ms（40 次采样）
+[PASS] Gallery05 长列表截断 — 04-long-list.png 1080×656，20 条，实画 12 条，底部「还有 8 个未显示 · 松开 Ctrl 隐藏」
+[PASS] Gallery06 高亮不改变面板尺寸 — 1080×604 连按 5 个组合，GetWindowRect 保持不变
+[PASS] Gallery07 单次渲染 p95 < 16ms — 全量重绘 p95 = 8.55 ms（32 次）；高亮切换 p95 = 1.90 ms（40 次）
 --- 通过 7，失败 0 ---
 
 $ dotnet run --project src/HotkeyHud.App -- --selftest
@@ -198,8 +198,8 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 | 空载提交大小 | ≤ 45 MB | 9.3 MB |
 | WM_INPUT 回调 p50 / p99 | — | 0.039 / 0.555 ms |
 | 空闲 10s CPU 增量 | < 100 ms | 15.6 ms |
-| 面板全量重绘 p95 | < 16 ms | 8.41 ms |
-| 面板高亮切换 p95 | < 16 ms | 2.49 ms |
+| 面板全量重绘 p95 | < 16 ms | 8.55 ms（32 次采样） |
+| 面板高亮切换 p95 | < 16 ms | 1.90 ms（40 次采样） |
 | 按键到首帧 | ≤ 120 ms | 未打点（含 dwell 300ms + 首帧渲染） |
 | 常驻句柄 | ≤ 500 | 未测（S5 托盘完成后测） |
 
@@ -217,9 +217,12 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 | 删除「修饰键自动重复守卫」 | 单元 Case02 FAIL（面板被打掉） |
 | 解除阻塞时不看非修饰键是否按住 | 单元 Case05 FAIL |
 | 删除「前台切换清空非修饰键」 | 单元 Case15 FAIL（阻塞永不解除） |
+| 删除「前台切换清空修饰键」 | 单元 Case16 FAIL |
 | `OnTick` 改用 `Environment.TickCount64`（时钟不同源） | 集成 Case01 FAIL（100ms 就弹面板） |
 | Armed 时按非修饰键不取消 | 单元 Case04 + 集成 Case04 同时 FAIL |
-| 不接 `ComboFlashed` | 集成 Case05 FAIL（高亮 label 无动作文案） |
+| 不接 `ComboFlashed` | 集成 Case05 FAIL（高亮组合不符） |
+| `MaxVisibleItems` 改 99 | 画廊 Gallery05 FAIL（实画条数不符） |
+| 高亮时把 bounds 撑宽 4px | 画廊 Gallery06 FAIL（GetWindowRect 1080→1088） |
 | S1：`UpdateLayeredWindow` 尺寸改 300×300 | S1-E FAIL，退出码 1 |
 
 > 注意：变异之间会互相掩盖。同时删掉「非修饰键取消」和「前台清空非修饰键」时，Case15 反而通过——
@@ -243,6 +246,13 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
    `docs/executor-s3-prompt.md` 的 §零 与 §2.2。见 [SPEC-GAP] 8。
 7. **动作文案压到 6 个汉字以内**：3 列 × 540 逻辑宽下，每格扣掉键帽只剩约 6 个汉字的空间，
    更长的文案会被省略号截断。这不是布局缺陷，是列宽的必然结果——HUD 本就该短。
+8. **`HudApp.PanelBounds()` 更名为 `DebugPanelBounds()`**：§3.3 要求「尺寸按内容算」，真实面板已改由
+   `HudPanel.Measure` 计算；剩下的 420×180 硬编码只服务 S1 自检（它需要一个可预期的参照物来断言
+   「窗口几何 = 请求的几何」），改名是为了不再冒充产品面板的几何来源。
+9. **高亮竖条画在命中格子的左缘，不是面板左缘**：3 列布局下一行有 3 个条目，画在面板边缘会让人
+   分不清命中的是哪一个。行背景提亮仍按 §6 铺满整行。
+10. **DPI 取系统 DPI（进程默认 SystemAware）**：Per-Monitor V2 与跨屏翻转定位属 §6 增强项，留 S6。
+   混合 DPI 多显示器下缩放系数会按主屏算。
 
 非偏差，但需要记录的实现决定：
 

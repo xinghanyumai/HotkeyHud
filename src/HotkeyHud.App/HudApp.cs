@@ -88,7 +88,7 @@ public sealed class HudApp : IDisposable
 
         // S1 自检与打字冒烟依赖这条最简渲染路径，S3 不改它
         _overlay.ShowNoActivate(
-            PanelBounds(), Color.FromArgb(OverlayAlpha, 0x4C, 0x8D, 0xFF), "HUD · S1 调试");
+            DebugPanelBounds(), Color.FromArgb(OverlayAlpha, 0x4C, 0x8D, 0xFF), "HUD · S1 调试");
         IsOverlayVisible = true;
         CurrentLabel = "HUD · S1 调试";
     }
@@ -200,8 +200,12 @@ public sealed class HudApp : IDisposable
         }
     }
 
-    /// <summary>面板几何的唯一来源：显示与自检都用它，避免自检和实现各写一份坐标。</summary>
-    public static Rectangle PanelBounds()
+    /// <summary>
+    /// S1 调试块的固定几何（420×180）。**不是**真实面板的尺寸——真实面板由
+    /// <see cref="HudPanel.Measure"/> 按内容算。这里保留硬编码是因为 S1 自检要一个
+    /// 可预期的参照物来验证「窗口几何 = 请求的几何」。
+    /// </summary>
+    public static Rectangle DebugPanelBounds()
     {
         Rectangle area = Screen.PrimaryScreen?.Bounds ?? new Rectangle(0, 0, 1920, 1080);
         return new Rectangle(

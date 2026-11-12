@@ -9,7 +9,7 @@
     { "keys": "Ctrl+Tab", "action": "下一个标签页", "group": "标签页" },
     { "keys": "Ctrl+9", "action": "跳到最右标签", "group": "标签页" },
     { "keys": "Ctrl+L", "action": "跳到地址栏", "group": "地址栏" },
-    { "keys": "Ctrl+K", "action": "页面内搜索", "group": "地址栏" },
+    { "keys": "Ctrl+K", "action": "随处搜索", "group": "地址栏" },
     { "keys": "Ctrl+H", "action": "打开历史记录", "group": "功能" },
     { "keys": "Ctrl+J", "action": "打开下载内容", "group": "功能" },
     { "keys": "Ctrl+G", "action": "查找下一个", "group": "功能" },

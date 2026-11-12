@@ -114,7 +114,7 @@ internal static class SelfTest
 
         IntPtr hwnd = hud.Overlay.Handle;
         bool visible = NativeMethods.IsWindowVisible(hwnd);
-        Rectangle panel = HudApp.PanelBounds();
+        Rectangle panel = HudApp.DebugPanelBounds();
         var center = new NativeMethods.POINT(
             panel.X + panel.Width / 2, panel.Y + panel.Height / 2);
         IntPtr hit = NativeMethods.WindowFromPoint(center);

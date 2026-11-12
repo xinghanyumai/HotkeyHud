@@ -88,7 +88,7 @@ internal static class Program
 
             if (capturePath is not null)
             {
-                Rectangle panel = HudApp.PanelBounds();
+                Rectangle panel = HudApp.DebugPanelBounds();
                 panel.Inflate(30, 30);
                 ScreenCapture.CaptureTo(panel, capturePath);
             }

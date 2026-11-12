@@ -1,6 +1,7 @@
 #if DEBUG
 using System.Diagnostics;
 using System.Text;
+using HotkeyHud.App.Platform;
 using HotkeyHud.App.UI;
 using HotkeyHud.Core;
 
@@ -14,6 +15,7 @@ internal static class RenderGallery
 {
     private const int CaptureMargin = 30;
     private const int WarmupSamples = 5;
+    private const int FullSamples = 32;
     private const int TimingSamples = 40;
     private const double RenderBudgetMs = 16.0;
 
@@ -82,35 +84,42 @@ internal static class RenderGallery
                 $"样本条目数 {longList.TotalCount} 未超过 {HudPanel.MaxVisibleItems}，无法验证截断");
             string detail = Capture(overlay, longList, null,
                 Path.Combine(outputDirectory, "04-long-list.png"), expectText: true);
+
             int hidden = longList.TotalCount - HudPanel.MaxVisibleItems;
-            return $"{detail}，应显示「还有 {hidden} 个未显示」";
+            string expected = $"还有 {hidden} 个未显示 · 松开 Ctrl 隐藏";
+
+            Require(overlay.LastItemCount == HudPanel.MaxVisibleItems,
+                $"实际画出 {overlay.LastItemCount} 条，期望 {HudPanel.MaxVisibleItems} 条");
+            Require(HudPanel.FooterText(longList) == expected,
+                $"底部文案不符：\"{HudPanel.FooterText(longList)}\"，期望 \"{expected}\"");
+
+            return $"{detail}，实画 {overlay.LastItemCount} 条，底部「{expected}」";
         });
 
         Case("Gallery06 高亮不改变面板尺寸", () =>
         {
             overlay.ShowModel(normal, null);
             Pump(120);
-            Rectangle before = overlay.LastBounds;
+            var before = WindowRect(overlay);
 
             foreach (char key in new[] { 'L', 'K', 'H', 'J', 'G' })
             {
                 overlay.ShowModel(normal, new Combo(Modifier.Ctrl, key));
                 Pump(60);
-                Rectangle after = overlay.LastBounds;
+                var after = WindowRect(overlay);
                 Require(before == after,
-                    $"高亮 Ctrl+{key} 后尺寸从 {before.Width}×{before.Height} 变为 "
-                    + $"{after.Width}×{after.Height}（位置 {before.X},{before.Y} → {after.X},{after.Y}）");
+                    $"高亮 Ctrl+{key} 后窗口矩形从 {before} 变为 {after}（会重建 DIB 并闪烁）");
             }
 
             overlay.HideOverlay();
-            return $"{before.Width}×{before.Height} 连按 5 个组合保持不变";
+            return $"{before.Width}×{before.Height} 连按 5 个组合，GetWindowRect 保持不变";
         });
 
         Case("Gallery07 单次渲染 p95 < 16ms", () =>
         {
             // 全量重绘：换一份等价的模型实例强制缓存未命中（尺寸相同，排除位图重建的干扰）
             HudModel clone = Build(repository, known, "chrome.exe", "Chrome");
-            var fullSamples = new List<double>(20);
+            var fullSamples = new List<double>(FullSamples);
             var clock = Stopwatch.StartNew();
 
             for (int i = 0; i < 5; i++)
@@ -118,7 +127,7 @@ internal static class RenderGallery
                 overlay.ShowModel(i % 2 == 0 ? normal : clone, null);
             }
 
-            for (int i = 0; i < 20; i++)
+            for (int i = 0; i < FullSamples; i++)
             {
                 clock.Restart();
                 overlay.ShowModel(i % 2 == 0 ? normal : clone, null);
@@ -149,8 +158,8 @@ internal static class RenderGallery
             Require(flashP95 < RenderBudgetMs,
                 $"高亮切换 p95 = {flashP95:F2} ms，超过 {RenderBudgetMs} ms 预算");
 
-            return $"全量重绘 p95 = {fullP95:F2} ms；高亮切换 p95 = {flashP95:F2} ms"
-                   + $"（{flashSamples.Count} 次采样）";
+            return $"全量重绘 p95 = {fullP95:F2} ms（{fullSamples.Count} 次）；"
+                   + $"高亮切换 p95 = {flashP95:F2} ms（{flashSamples.Count} 次）";
         });
 
         return Flush();
@@ -203,6 +212,13 @@ internal static class RenderGallery
         {
             throw new GalleryCheckException(message);
         }
+    }
+
+    /// <summary>真实窗口矩形。不能用 <c>LastBounds</c>——那是渲染前算出来的期望值，拿它自己比自己恒真。</summary>
+    private static (int Left, int Top, int Width, int Height) WindowRect(OverlayForm overlay)
+    {
+        NativeMethods.GetWindowRect(overlay.Handle, out NativeMethods.RECT rect);
+        return (rect.Left, rect.Top, rect.Width, rect.Height);
     }
 
     private static double Percentile(List<double> samples, double percentile)

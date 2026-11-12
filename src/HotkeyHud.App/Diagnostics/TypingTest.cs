@@ -29,7 +29,7 @@ internal static class TypingTest
         {
             Multiline = true,
             Dock = DockStyle.Fill,
-            Font = new Font("Consolas", 11f),
+            Font = new Font("Consolas", 15f, FontStyle.Regular, GraphicsUnit.Pixel),
             ScrollBars = ScrollBars.Vertical,
             WordWrap = false,
         };
