@@ -338,6 +338,32 @@ internal static class NativeMethods
         return SendInput(2, inputs, Marshal.SizeOf<INPUT>()) == 2;
     }
 
+    // ---------- 进程内存 ----------
+    // PROCESS_MEMORY_COUNTERS_EX2（Windows 10 1607+）：唯一同时给出
+    // 私有工作集 / 提交大小 / 总工作集的文档化结构，三个口径不能互相替代。
+    [StructLayout(LayoutKind.Sequential)]
+    public struct PROCESS_MEMORY_COUNTERS_EX2
+    {
+        public uint cb;
+        public uint PageFaultCount;
+        public UIntPtr PeakWorkingSetSize;
+        public UIntPtr WorkingSetSize;
+        public UIntPtr QuotaPeakPagedPoolUsage;
+        public UIntPtr QuotaPagedPoolUsage;
+        public UIntPtr QuotaPeakNonPagedPoolUsage;
+        public UIntPtr QuotaNonPagedPoolUsage;
+        public UIntPtr PagefileUsage;
+        public UIntPtr PeakPagefileUsage;
+        public UIntPtr PrivateUsage;
+        public UIntPtr PrivateWorkingSetSize;
+        public ulong SharedCommitUsage;
+    }
+
+    [DllImport("psapi.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetProcessMemoryInfo(
+        IntPtr hProcess, out PROCESS_MEMORY_COUNTERS_EX2 counters, uint cb);
+
     // ---------- 控制台附着（WinExe 无控制台）----------
     public const uint ATTACH_PARENT_PROCESS = 0xFFFFFFFF;
 

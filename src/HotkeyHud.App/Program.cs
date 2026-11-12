@@ -1,29 +1,49 @@
+using System.Text;
+#if DEBUG
 using HotkeyHud.App.Diagnostics;
+#endif
 
 namespace HotkeyHud.App;
 
 internal static class Program
 {
+    private const int ExitUsageError = 2;
+
     [STAThread]
     private static int Main(string[] args)
     {
+        Options options;
         try
         {
-            if (HasFlag(args, "--selftest"))
+            options = ParseOptions(args);
+        }
+        catch (ArgumentException ex)
+        {
+            // 未知/畸形参数必须显式失败，不能静默忽略（S1 整改第 4 项）
+            WriteError(ex.Message);
+            return ExitUsageError;
+        }
+
+        try
+        {
+#if DEBUG
+            if (options.SelfTest)
             {
                 return SelfTest.Run();
             }
 
-            if (HasFlag(args, "--typing-test"))
+            if (options.TypingTest)
             {
-                return TypingTest.Run(GetInt(args, "--seconds", 30), GetValue(args, "--capture"));
+                return TypingTest.Run(options.Seconds, options.Capture);
             }
 
-            if (HasFlag(args, "--demo"))
+            if (options.Demo)
             {
-                return RunDemo(GetValue(args, "--capture"));
+                return RunDemo(options.Capture);
             }
-
+#else
+            _ = options; // Release 构建下诊断入口已编译剔除
+#endif
             return RunInteractive();
         }
         catch (Exception ex)
@@ -42,6 +62,7 @@ internal static class Program
         return 0;
     }
 
+#if DEBUG
     private static int RunDemo(string? capturePath)
     {
         ApplicationConfiguration.Initialize();
@@ -56,12 +77,7 @@ internal static class Program
 
             if (capturePath is not null)
             {
-                Rectangle area = Screen.PrimaryScreen?.Bounds ?? new Rectangle(0, 0, 1920, 1080);
-                var panel = new Rectangle(
-                    area.X + (area.Width - 420) / 2,
-                    area.Y + (area.Height - 180) / 2,
-                    420,
-                    180);
+                Rectangle panel = HudApp.PanelBounds();
                 panel.Inflate(30, 30);
                 ScreenCapture.CaptureTo(panel, capturePath);
             }
@@ -74,19 +90,107 @@ internal static class Program
         Application.Run(new ApplicationContext());
         return 0;
     }
+#endif
 
-    private static bool HasFlag(string[] args, string flag)
-        => args.Any(a => string.Equals(a, flag, StringComparison.OrdinalIgnoreCase));
+    private sealed record Options(
+        bool SelfTest, bool TypingTest, bool Demo, int Seconds, string? Capture);
 
-    private static string? GetValue(string[] args, string name)
+    private static Options ParseOptions(string[] args)
     {
-        string? match = args.FirstOrDefault(
-            a => a.StartsWith(name + "=", StringComparison.OrdinalIgnoreCase));
-        return match is null ? null : match[(name.Length + 1)..];
+        bool selfTest = false;
+        bool typingTest = false;
+        bool demo = false;
+        int seconds = 30;
+        string? capture = null;
+
+        foreach (string arg in args)
+        {
+            switch (arg)
+            {
+                case "--selftest":
+                    RequireDiagnosticsBuild(arg);
+                    selfTest = true;
+                    break;
+
+                case "--typing-test":
+                    RequireDiagnosticsBuild(arg);
+                    typingTest = true;
+                    break;
+
+                case "--demo":
+                    RequireDiagnosticsBuild(arg);
+                    demo = true;
+                    break;
+
+                default:
+                    if (TryReadValue(arg, "--seconds", out string? rawSeconds))
+                    {
+                        RequireDiagnosticsBuild(arg);
+                        if (!int.TryParse(rawSeconds, out seconds) || seconds <= 0)
+                        {
+                            throw new ArgumentException(
+                                $"--seconds 需要正整数，收到 \"{rawSeconds}\"");
+                        }
+                    }
+                    else if (TryReadValue(arg, "--capture", out string? capturePath))
+                    {
+                        RequireDiagnosticsBuild(arg);
+                        if (string.IsNullOrWhiteSpace(capturePath))
+                        {
+                            throw new ArgumentException("--capture 需要非空路径");
+                        }
+
+                        capture = capturePath;
+                    }
+                    else
+                    {
+                        throw new ArgumentException(
+                            $"未知参数 \"{arg}\"。可用：--selftest --typing-test --demo "
+                            + "--seconds=N --capture=PATH（注意值必须用 = 连接）");
+                    }
+
+                    break;
+            }
+        }
+
+        return new Options(selfTest, typingTest, demo, seconds, capture);
     }
 
-    private static int GetInt(string[] args, string name, int fallback)
-        => int.TryParse(GetValue(args, name), out int value) ? value : fallback;
+    /// <summary>只接受 <c>--name=value</c>；空格分隔形式一律落到「未知参数」分支报错。</summary>
+    private static bool TryReadValue(string arg, string name, out string? value)
+    {
+        string prefix = name + "=";
+        if (arg.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+        {
+            value = arg[prefix.Length..];
+            return true;
+        }
+
+        value = null;
+        return false;
+    }
+
+    private static void RequireDiagnosticsBuild(string arg)
+    {
+#if !DEBUG
+        throw new ArgumentException($"{arg} 只在 Debug 构建可用");
+#endif
+    }
+
+    private static void WriteError(string message)
+    {
+        try
+        {
+            using var stderr = Console.OpenStandardError();
+            // 不带 BOM：UTF8Encoding(true) 会在管道开头插入 EF BB BF，污染下游解析
+            using var writer = new StreamWriter(stderr, new UTF8Encoding(false)) { AutoFlush = true };
+            writer.WriteLine(message);
+        }
+        catch
+        {
+            // 无标准错误流时只能靠退出码传达
+        }
+    }
 
     private static void WriteStartupLog(Exception ex)
     {

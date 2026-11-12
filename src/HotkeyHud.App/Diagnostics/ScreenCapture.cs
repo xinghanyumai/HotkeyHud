@@ -1,3 +1,4 @@
+#if DEBUG
 using System.Drawing.Imaging;
 
 namespace HotkeyHud.App.Diagnostics;
@@ -21,3 +22,4 @@ internal static class ScreenCapture
         bitmap.Save(path, ImageFormat.Png);
     }
 }
+#endif

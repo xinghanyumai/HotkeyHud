@@ -1,3 +1,4 @@
+#if DEBUG
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 using HotkeyHud.App.Platform;
@@ -32,9 +33,12 @@ internal static class SelfTest
         hud.Input.Input += captured.Add;
         hud.Input.CollectStats = true;
 
+        // 空载口径必须在显示过任何面板之前取：一旦画过面板，DIB 与缓存位图会抬高全部三个数
+        Pump(300);
+        CheckIdleMemory();
+
         CheckInputPath(hud, captured);
         CheckOverlay(hud);
-        CheckMemory();
 
         return Flush();
     }
@@ -123,17 +127,28 @@ internal static class SelfTest
             $"SW_HIDE 后 IsWindowVisible={NativeMethods.IsWindowVisible(hwnd)}");
     }
 
-    private static void CheckMemory()
+    private static void CheckIdleMemory()
     {
-        using var process = Process.GetCurrentProcess();
-        process.Refresh();
-        double commitMb = process.PrivateMemorySize64 / 1024.0 / 1024.0;
-        double workingMb = process.WorkingSet64 / 1024.0 / 1024.0;
+        // 三个口径并列，不可互相替代（S1 整改第 1 项）：
+        //   私有工作集 = 进程独占的物理页，S6 优化的基线就是这个数
+        //   提交大小   = 已提交的虚拟内存（含换出页），§八 的 45 MB 门槛按此口径
+        //   总工作集   = 私有 + 与系统共享的框架页（CLR / WinForms / GDI+），会随共享程度波动
+        IntPtr handle = Process.GetCurrentProcess().Handle;
+        uint cb = (uint)Marshal.SizeOf<NativeMethods.PROCESS_MEMORY_COUNTERS_EX2>();
+        if (!NativeMethods.GetProcessMemoryInfo(handle, out var counters, cb))
+        {
+            Record(false, "性能-空载内存三口径",
+                $"GetProcessMemoryInfo 失败，Win32 错误码 {Marshal.GetLastWin32Error()}");
+            return;
+        }
 
-        // §八 的「空载私有工作集」在任务管理器里对应「提交大小」这一列。
-        // WorkingSet64 含 CLR / WinForms 程序集映射的共享页，不是私有口径，只作参考。
-        Record(commitMb <= 45.0, "性能-空载提交大小",
-            $"提交大小 {commitMb:F1} MB（§八 目标 ≤ 45 MB）；总工作集 {workingMb:F1} MB 含共享框架页");
+        double privateWs = counters.PrivateWorkingSetSize.ToUInt64() / 1024.0 / 1024.0;
+        double commit = counters.PrivateUsage.ToUInt64() / 1024.0 / 1024.0;
+        double totalWs = counters.WorkingSetSize.ToUInt64() / 1024.0 / 1024.0;
+
+        Record(commit <= 45.0, "性能-空载内存三口径",
+            $"私有工作集 {privateWs:F1} MB / 提交大小 {commit:F1} MB / 总工作集 {totalWs:F1} MB"
+            + "（§八 门槛：提交大小 ≤ 45 MB）");
     }
 
     private static void Record(bool passed, string name, string detail)
@@ -194,3 +209,4 @@ internal static class SelfTest
         }
     }
 }
+#endif

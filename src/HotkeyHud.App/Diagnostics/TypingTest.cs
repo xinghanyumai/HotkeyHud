@@ -1,3 +1,4 @@
+#if DEBUG
 using System.Diagnostics;
 using System.Text;
 using HotkeyHud.App.Platform;
@@ -172,3 +173,4 @@ internal static class TypingTest
         }
     }
 }
+#endif
