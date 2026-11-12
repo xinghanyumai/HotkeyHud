@@ -56,4 +56,10 @@ public sealed class KnownShortcutFilter
 
     public bool IsKnown(string text)
         => Keys.TryParse(text, out Combo combo) && _combos.Contains(combo);
+
+    /// <summary>
+    /// 直接接给 <see cref="TriggerStateMachine.FlashPredicate"/> 用。
+    /// 提供这个入口是为了让 §4.3 的第二个作用点（闪烁抑制）不会被接线时漏掉。
+    /// </summary>
+    public bool AllowFlash(Combo combo) => !IsKnown(combo);
 }

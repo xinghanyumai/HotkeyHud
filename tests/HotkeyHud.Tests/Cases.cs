@@ -57,6 +57,11 @@ internal static class Cases
         Check.Equal(1, shown.Count, "300ms 时应请求显示一次");
         Check.Equal(Modifier.Ctrl, shown[0], "触发键应为 Ctrl");
         Check.Equal(HudState.Visible, sm.State, "应进入 Visible");
+
+        // 触发键自动重复：同一个 Ctrl 仍按住时系统会持续发 down
+        sm.OnKey(new KeyEvent(Keys.VkControl, true, 310));
+        Check.Equal(HudState.Visible, sm.State, "触发键自动重复不应把面板打掉");
+        Check.Equal(1, shown.Count, "自动重复不应重复请求显示");
     }
 
     private static void Case03_ShortPressNeverShows()
@@ -98,11 +103,24 @@ internal static class Cases
         int shows = 0;
         sm.ShowRequested += _ => shows++;
 
-        // 承接 Case04：Ctrl 按下 → C 按下 → 全部松开
+        // 承接 Case04：Ctrl 按下 → C 按下 → 取消并阻塞
         sm.OnKey(new KeyEvent(Keys.VkControl, true, 0));
         sm.OnKey(new KeyEvent(VkC, true, 60));
-        sm.OnKey(new KeyEvent(VkC, false, 90));
+
+        // 阻塞必须真的存在：Ctrl 还按着，推进多久都不能弹
+        sm.OnTick(400);
+        sm.OnTick(2000);
+        Check.Equal(0, shows, "阻塞期间即使继续按住也不得弹出");
+
+        // 只松开 Ctrl、C 仍按住 → 按「阻塞至全部松开」的字面义仍应阻塞
         sm.OnKey(new KeyEvent(Keys.VkControl, false, 130));
+        sm.OnKey(new KeyEvent(Keys.VkControl, true, 150));
+        sm.OnTick(450);
+        Check.Equal(0, shows, "非修饰键未松开时不得解除阻塞");
+
+        // 全部松开
+        sm.OnKey(new KeyEvent(Keys.VkControl, false, 170));
+        sm.OnKey(new KeyEvent(VkC, false, 180));
 
         // 重新长按 300ms
         sm.OnKey(new KeyEvent(Keys.VkControl, true, 200));
@@ -236,6 +254,7 @@ internal static class Cases
         Check.False(model.HasProfile, "HasProfile 应为 false");
         Check.Equal(0, model.TotalCount, "不应有任何条目");
         Check.Equal(0, model.Groups.Count, "不得混入其他应用的条目");
+        Check.Equal("记事本", model.AppName, "标题应回落到调用方给的应用名");
     }
 
     private static void Case11_MultiModifierExcluded()
@@ -264,7 +283,8 @@ internal static class Cases
             WindowClass: "Notepad",
             ExecutablePath: @"C:\Windows\notepad.exe");
 
-        Check.True(GameClassifier.ShouldSuppress(signal, null, out _), "独占全屏应抑制");
+        Check.True(GameClassifier.ShouldSuppress(signal, null, out string reason), "独占全屏应抑制");
+        Check.True(reason.Length > 0, "抑制时必须给出命中原因");
     }
 
     private static void Case13_PlatformPathSuppressed()
@@ -277,7 +297,8 @@ internal static class Cases
             WindowClass: "SomeClass",
             ExecutablePath: @"D:\SteamLibrary\steamapps\common\Foo\foo.exe");
 
-        Check.True(GameClassifier.ShouldSuppress(signal, null, out _), "发行平台目录应抑制");
+        Check.True(GameClassifier.ShouldSuppress(signal, null, out string reason), "发行平台目录应抑制");
+        Check.True(reason.Length > 0, "抑制时必须给出命中原因");
     }
 
     private static void Case14_NormalWindowNotSuppressed()

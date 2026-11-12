@@ -125,6 +125,8 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 | `ShouldFlash` 恒返回 true | Case06 FAIL |
 | 删除「全部松开解除阻塞」 | Case05 FAIL |
 | 长按判定 `>=` 改成 `>` | Case02 FAIL，Case01 仍 PASS |
+| 删除「修饰键自动重复守卫」 | Case02 FAIL（面板被打掉） |
+| 解除阻塞时不看非修饰键是否按住 | Case05 FAIL |
 | S1：`UpdateLayeredWindow` 尺寸改 300×300 | S1-E FAIL，退出码 1 |
 
 ## 与规格的偏差
@@ -149,10 +151,11 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 | # | 位置 | 缺口 | 采用的最小解释 |
 |---|---|---|---|
 | 1 | §5.2 转移表 | `Flashing` 只列了「计时到点」与「非熟记组合按下」，缺「另一个修饰键按下 / 触发键松开 / 熟记组合按下」三行 | 一律按 `Visible` 同规则处理：收起 + 阻塞 |
-| 2 | §5.2 | 「`Armed` + 另一个修饰键按下 → 取消」未说明是否阻塞，而「非修饰键按下」明确写了「+ 阻塞」 | 按字面实现：不阻塞 |
+| 2 | §5.2 | 「`Armed` + 另一个修饰键按下 → 取消」未说明是否阻塞，而「非修饰键按下」明确写了「+ 阻塞」 | 按字面实现：不阻塞；但入口挡住修饰键自动重复，避免「取消后又被重复事件重新 Armed」 |
 | 3 | §3.1 | 要求解析失败的条目「静默丢弃并计数」，未定义计数暴露在哪 | 增加 `ShortcutRepository.DroppedShortcutCount` |
 | 4 | §4.4 | 未定义 `knownShortcuts` 里有无法解析条目时的行为 | 抛 `ArgumentException`，配置错误必须显式失败 |
-| 5 | §3.1 | 未定义同一进程名出现在多个档案时的行为 | 抛 `InvalidDataException`，不静默择一 |
+| 5 | §3.1 | 未定义同一进程名出现在多个档案时的行为 | 先加载者占用，后来者整份跳过并记入 `LoadErrors` |
+| 6 | §3.1 | 未定义档案 JSON 损坏时的行为 | 跳过该档案并记入 `LoadErrors`，不让一份坏文件把程序拖垮；错误不静默 |
 
 ## 进度
 

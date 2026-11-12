@@ -72,6 +72,11 @@ public static class GameClassifier
             string process = NormalizeProcess(signal.ProcessName);
             foreach (string configured in rules.GameProcessNames)
             {
+                if (string.IsNullOrWhiteSpace(configured))
+                {
+                    continue; // 配置里混进空项不应炸掉判定
+                }
+
                 if (string.Equals(process, NormalizeProcess(configured), StringComparison.OrdinalIgnoreCase))
                 {
                     reason = $"D3 用户游戏名单 {configured}";

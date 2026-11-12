@@ -50,7 +50,9 @@ public static class HudBuilder
                 continue;
             }
 
-            string title = string.IsNullOrWhiteSpace(entry.Group) ? DefaultGroupTitle : entry.Group!;
+            string title = string.IsNullOrWhiteSpace(entry.Group)
+                ? DefaultGroupTitle
+                : entry.Group!.Trim();
             if (!groupItems.TryGetValue(title, out List<HudItem>? items))
             {
                 items = new List<HudItem>();
@@ -58,7 +60,8 @@ public static class HudBuilder
                 groupOrder.Add(title);
             }
 
-            items.Add(new HudItem { Keys = entry.Keys, Action = entry.Action });
+            // 用规范格式而不是原始文本，避免 "ctrl+k" 这类写法原样上屏
+            items.Add(new HudItem { Keys = Keys.Format(entry.Combo), Action = entry.Action });
             total++;
         }
 
@@ -66,12 +69,15 @@ public static class HudBuilder
         for (int i = 0; i < groupOrder.Count; i++)
         {
             string title = groupOrder[i];
-            groups[i] = new HudGroup { Title = title, Items = groupItems[title] };
+            // 转数组：UI 拿到的必须是只读的，不能向下转型改内容（§6 边界约定）
+            groups[i] = new HudGroup { Title = title, Items = groupItems[title].ToArray() };
         }
 
         return new HudModel
         {
-            AppName = profile.DisplayName,
+            AppName = string.IsNullOrWhiteSpace(profile.DisplayName)
+                ? fallbackAppName
+                : profile.DisplayName,
             Modifier = modifier,
             Groups = groups,
             TotalCount = total,

@@ -10,7 +10,10 @@ public enum Modifier
     Win = 8,
 }
 
-/// <summary>修饰键 + 单键。VirtualKey 为 0 表示纯修饰键组合。</summary>
+/// <summary>
+/// 修饰键 + 单键。<see cref="VirtualKey"/> 为 0 表示纯修饰键组合——该值只会由
+/// <see cref="Keys.Format"/> 消费，<see cref="Keys.TryParse"/> 永远产出非 0 的键。
+/// </summary>
 public readonly record struct Combo(Modifier Modifiers, int VirtualKey)
 {
     public override string ToString() => Keys.Format(this);
@@ -48,6 +51,10 @@ public static class Keys
     /// <summary>
     /// 解析「修饰键 + 单键」形式的组合文本，例如 <c>Ctrl+K</c>、<c>Ctrl+Shift+=</c>。
     /// 解析失败返回 false，调用方负责丢弃并计数（§3.1）。
+    /// <para>
+    /// 限制：<c>+</c> 本身无法作为按键（分隔符冲突，且它在 VK 层面就是 Shift+=）。
+    /// 不支持的写法一律返回 false，不做猜测。
+    /// </para>
     /// </summary>
     public static bool TryParse(string? text, out Combo combo)
     {

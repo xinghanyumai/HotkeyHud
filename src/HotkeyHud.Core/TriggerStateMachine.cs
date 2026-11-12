@@ -11,9 +11,14 @@ public enum HudState
 /// <summary>
 /// §5 状态机。时间只有两个来源：<see cref="OnTick"/> 的 nowMs 与 <see cref="KeyEvent.TimestampMs"/>。
 /// 内部不持有 Stopwatch / DateTime / Timer，否则时序规则无法可靠验证。
+/// <para>
+/// 契约要求：两个时间必须同源（同一个单调时钟）。混用会直接让驻留时长判定失真。
+/// </para>
 /// </summary>
 public sealed class TriggerStateMachine
 {
+    private readonly HashSet<int> _heldNonModifierKeys = new();
+
     private Modifier _heldModifiers;
     private long _armedAtMs;
     private long _flashStartedMs;
@@ -82,10 +87,15 @@ public sealed class TriggerStateMachine
             return;
         }
 
-        // 非修饰键松开不影响任何状态
         if (e.IsDown)
         {
+            _heldNonModifierKeys.Add(e.VirtualKey);
             HandleNonModifierDown(e.VirtualKey, e.TimestampMs);
+        }
+        else
+        {
+            _heldNonModifierKeys.Remove(e.VirtualKey);
+            TryUnblock();
         }
     }
 
@@ -116,17 +126,33 @@ public sealed class TriggerStateMachine
 
     public void OnForegroundChanged() => CollapseIfActive(block: false);
 
+    /// <summary>回到初始状态。面板正在显示时会先发一次收起，避免 UI 残留。</summary>
     public void Reset()
     {
+        bool wasShowing = State is HudState.Visible or HudState.Flashing;
+
         State = HudState.Idle;
         TriggerModifier = Modifier.None;
         FlashedCombo = null;
         _heldModifiers = Modifier.None;
+        _heldNonModifierKeys.Clear();
         _blockedUntilRelease = false;
+
+        if (wasShowing)
+        {
+            HideRequested?.Invoke();
+        }
     }
 
     private void HandleModifierDown(Modifier modifier, long timestampMs)
     {
+        if ((_heldModifiers & modifier) != 0)
+        {
+            // 自动重复：同一个修饰键仍按住时系统会持续发 down。
+            // 不挡住的话，Visible 期间按住的 Ctrl 会把刚弹出的面板打掉（§5.3.1 的同一类坑）。
+            return;
+        }
+
         bool otherModifierHeld = (_heldModifiers & ~modifier) != Modifier.None;
         _heldModifiers |= modifier;
 
@@ -145,17 +171,13 @@ public sealed class TriggerStateMachine
                 return;
 
             case HudState.Armed:
-                // 同一修饰键的自动重复不算「另一个修饰键」
-                if (modifier != TriggerModifier)
-                {
-                    Collapse(raiseHide: false, block: false);
-                }
-
+                // 同一修饰键的重复已在入口挡掉，走到这里必然是「另一个修饰键」
+                Collapse(raiseHide: false, block: false);
                 return;
 
             case HudState.Visible:
             case HudState.Flashing:
-                // §5.2 只写了 Visible；Flashing 按同样规则处理（见 [SPEC-GAP]）
+                // §5.2 只写了 Visible；Flashing 按同样规则处理（见 [SPEC-GAP] 1）
                 Collapse(raiseHide: true, block: true);
                 return;
         }
@@ -177,11 +199,7 @@ public sealed class TriggerStateMachine
             }
         }
 
-        // 全部松开才解除阻塞，否则 Ctrl+C 之后按住 Ctrl 会再次弹面板
-        if (_heldModifiers == Modifier.None)
-        {
-            _blockedUntilRelease = false;
-        }
+        TryUnblock();
     }
 
     private void HandleNonModifierDown(int virtualKey, long timestampMs)
@@ -217,6 +235,15 @@ public sealed class TriggerStateMachine
     }
 
     private bool ShouldFlash(Combo combo) => FlashPredicate?.Invoke(combo) ?? true;
+
+    /// <summary>§5.3.1：必须等修饰键与非修饰键全部松开，否则 Ctrl+C 之后会突然弹面板。</summary>
+    private void TryUnblock()
+    {
+        if (_heldModifiers == Modifier.None && _heldNonModifierKeys.Count == 0)
+        {
+            _blockedUntilRelease = false;
+        }
+    }
 
     private void CollapseIfActive(bool block)
     {
