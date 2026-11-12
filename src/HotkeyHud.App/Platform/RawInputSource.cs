@@ -124,6 +124,13 @@ public sealed class RawInputSource : IDisposable
 
     public IntPtr Handle => _window.Handle;
 
+    /// <summary>
+    /// 当前单调时间（毫秒），与 <see cref="InputEvent.TimestampMs"/> 同源同 epoch。
+    /// 这是全程序唯一允许的时钟：状态机的 OnTick 必须传它，不能混入
+    /// <c>Environment.TickCount64</c> / <c>DateTime</c> / 第二个 Stopwatch。
+    /// </summary>
+    public long NowMs => ElapsedMs();
+
     internal void OnRawInput(IntPtr lParam)
     {
         long start = Stopwatch.GetTimestamp();

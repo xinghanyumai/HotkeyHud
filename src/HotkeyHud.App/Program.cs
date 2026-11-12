@@ -37,6 +37,11 @@ internal static class Program
                 return TypingTest.Run(options.Seconds, options.Capture);
             }
 
+            if (options.IntegrationTest)
+            {
+                return IntegrationTest.Run();
+            }
+
             if (options.Demo)
             {
                 return RunDemo(options.Capture);
@@ -93,12 +98,13 @@ internal static class Program
 #endif
 
     private sealed record Options(
-        bool SelfTest, bool TypingTest, bool Demo, int Seconds, string? Capture);
+        bool SelfTest, bool TypingTest, bool IntegrationTest, bool Demo, int Seconds, string? Capture);
 
     private static Options ParseOptions(string[] args)
     {
         bool selfTest = false;
         bool typingTest = false;
+        bool integrationTest = false;
         bool demo = false;
         int seconds = 30;
         string? capture = null;
@@ -115,6 +121,11 @@ internal static class Program
                 case "--typing-test":
                     RequireDiagnosticsBuild(arg);
                     typingTest = true;
+                    break;
+
+                case "--integration-test":
+                    RequireDiagnosticsBuild(arg);
+                    integrationTest = true;
                     break;
 
                 case "--demo":
@@ -145,15 +156,15 @@ internal static class Program
                     else
                     {
                         throw new ArgumentException(
-                            $"未知参数 \"{arg}\"。可用：--selftest --typing-test --demo "
-                            + "--seconds=N --capture=PATH（注意值必须用 = 连接）");
+                            $"未知参数 \"{arg}\"。可用：--selftest --typing-test --integration-test "
+                            + "--demo --seconds=N --capture=PATH（注意值必须用 = 连接）");
                     }
 
                     break;
             }
         }
 
-        return new Options(selfTest, typingTest, demo, seconds, capture);
+        return new Options(selfTest, typingTest, integrationTest, demo, seconds, capture);
     }
 
     /// <summary>只接受 <c>--name=value</c>；空格分隔形式一律落到「未知参数」分支报错。</summary>

@@ -43,12 +43,14 @@ src/HotkeyHud.Core/           纯逻辑，零 UI 依赖
   TriggerStateMachine.cs      状态机，时钟外部注入（§5）
 src/HotkeyHud.App/
   Platform/NativeMethods.cs   全部 P/Invoke 声明
-  Platform/RawInputSource.cs  Raw Input 采集（回调只解析+入队）
+  Platform/RawInputSource.cs  Raw Input 采集；同时是全程序唯一的时钟来源（NowMs）
+  Platform/ForegroundWatcher.cs  前台窗口变化监听（SetWinEventHook）
+  Platform/ForegroundProbe.cs    前台进程名查询（缓存 + Invalidate）
   UI/OverlayForm.cs           分层覆盖窗（穿透 / 不抢焦点 / 不进 Alt+Tab）
-  Diagnostics/                自检与压力测试，仅 Debug 构建编译
-  HudApp.cs                   编排
+  Diagnostics/                自检、集成测试、压力测试，仅 Debug 构建编译
+  HudApp.cs                   编排：Raw Input → 状态机 → 覆盖窗
   Program.cs                  入口 + 严格参数解析 + 崩溃日志
-tests/HotkeyHud.Tests/        §7 的 15 条验收用例
+tests/HotkeyHud.Tests/        §7 的 15 条规则用例
 ```
 
 ## 构建与运行
@@ -56,9 +58,11 @@ tests/HotkeyHud.Tests/        §7 的 15 条验收用例
 ```bash
 dotnet build HotkeyHud.slnx -warnaserror
 
-# 常驻：F9 手动显隐覆盖窗（仅 Debug 构建保留，S2.5 接入状态机后移除）
+# 常驻：长按 Ctrl / Alt / Shift / Win 弹出面板
 dotnet run --project src/HotkeyHud.App
 ```
+
+F9 手动开关已在 S2.5 移除——它会和状态机抢状态。
 
 ## 验证
 
@@ -66,16 +70,38 @@ dotnet run --project src/HotkeyHud.App
 # ① §7 的 15 条规则用例（唯一验收凭据）
 dotnet run --project tests/HotkeyHud.Tests
 
-# ② S1 回归门禁：覆盖窗四条硬指标 + Raw Input 通路 + 内存三口径
+# ② S2.5 集成验收：真实注入按键，走 Raw Input → 状态机 → 覆盖窗全链路
+dotnet run --project src/HotkeyHud.App -- --integration-test
+
+# ③ S1 回归门禁：覆盖窗四条硬指标 + Raw Input 通路 + 内存三口径
 dotnet run --project src/HotkeyHud.App -- --selftest
 
-# ③ 进程内输入通路冒烟（跨进程真实键盘打字待人工复核，见「偏差」）
+# ④ 进程内输入通路冒烟（跨进程真实键盘打字待人工复核，见「偏差」）
 dotnet run --project src/HotkeyHud.App -- --typing-test --seconds=60
 ```
 
-全部以退出码表示失败数（0 = 全部通过）。`--selftest` / `--typing-test` / `--demo` 只在
-Debug 构建存在，Release 下传入会以退出码 2 报错；未知参数与空格分隔的 `--capture path`
-同样报错退出，不会静默忽略。
+全部以退出码表示失败数（0 = 全部通过）。`--selftest` / `--integration-test` / `--typing-test` /
+`--demo` 只在 Debug 构建存在，Release 下传入会以退出码 2 报错；未知参数与空格分隔的
+`--capture path` 同样报错退出，不会静默忽略。
+
+### 时钟唯一来源
+
+`RawInputSource.NowMs`。状态机的 `KeyEvent.TimestampMs` 与 `OnTick(nowMs)` 都取自它内部的
+同一个 `Stopwatch`，`HudApp` 里不出现 `Environment.TickCount64` / `DateTime` / 第二个 Stopwatch。
+混用会让 `nowMs - _armedAtMs` 恒为极大值，**第一个 tick 就弹面板**，而 15 条单元测试抓不到
+（它们用自造的同源时间）。这一条由集成测试 Case01 兜底：把 `OnTick` 换成 `Environment.TickCount64`
+后 Case01 立即变红。
+
+### 修饰键自动重复：实测结论
+
+`--selftest` 会按住 F24 1200ms 并统计 Raw Input 按下次数：
+
+```
+[INFO] 按住 F24 1200ms 期间收到 1 次按下 —— 系统自动重复在注入路径下不存在，守卫按防御性代码保留
+```
+
+即**注入路径下不产生自动重复**，状态机里的重复守卫目前是无害的防御性代码。物理键盘可能不同
+（重复由键盘类驱动生成），所以守卫保留。将来换输入源时重跑这条 INFO 即可判断它是否开始起作用。
 
 ### 实测结果（2026-11-12，Windows 10/11 x64，屏幕 3120×2080）
 
@@ -98,12 +124,26 @@ $ dotnet run --project tests/HotkeyHud.Tests
 [PASS] Case15 前台窗口切换立即收起
 --- 通过 15，失败 0 ---
 
+$ dotnet run --project src/HotkeyHud.App -- --integration-test
+[PASS] Case01 按住 100ms 面板不出现 — 可见=False
+[PASS] Case02 按住 400ms 面板出现且标题正确 — label="HudTestApp · 2 条 Ctrl 快捷键"
+[PASS] Case03 松开触发键面板消失 — 可见=False
+[PASS] Case04 短按组合全程不弹面板 — 期间从未出现
+[PASS] Case05 熟记组合立即收起面板 — Ctrl+C 后 40ms 内已收起
+[PASS] Case06 前台切换立即收起面板 — 切换后 200ms 内已收起
+[PASS] Case07 未收录应用显示「未收录」 — label="未收录 HotkeyHud.App.exe"
+[PASS] Case08 手动暂停时长按不弹面板 — 暂停期间从未出现
+[PASS] Case09 空闲 10 秒 CPU 增量 < 100ms — CPU 增量 15.6 ms，计时器已停
+[PASS] Case10 S1 窗口属性保持不变 — LAYERED|TRANSPARENT|NOACTIVATE|TOOLWINDOW 全置位
+--- 通过 10，失败 0 ---
+
 $ dotnet run --project src/HotkeyHud.App -- --selftest
-[PASS] 性能-空载内存三口径 — 私有工作集 5.3 MB / 提交大小 8.7 MB / 总工作集 33.6 MB
-[PASS] S1-A1 Raw Input 通路 — F24 按下=True 松开=True，共收到 604 个事件
-[PASS] S1-A2 输入回调不阻塞 — p50 = 0.018 ms（阈值 0.500），p99 = 0.472 ms（阈值 5.000）
-[PASS] S1-B 鼠标穿透 — 可见=True，WindowFromPoint(屏幕中心) = 0x20720，覆盖窗 = 0x20786
-[PASS] S1-C 不抢焦点 — 显示前 = 0x1310700，显示后 = 0x1310700
+[PASS] 性能-空载内存三口径 — 私有工作集 5.9 MB / 提交大小 9.3 MB / 总工作集 35.2 MB
+[PASS] S1-A1 Raw Input 通路 — F24 按下=True 松开=True，共收到 600 个事件
+[PASS] S1-A2 输入回调不阻塞 — p50 = 0.039 ms（阈值 0.500），p99 = 0.555 ms（阈值 5.000）
+[INFO] 按住 F24 1200ms 期间收到 1 次按下 —— 系统自动重复在注入路径下不存在，守卫按防御性代码保留
+[PASS] S1-B 鼠标穿透 — 可见=True，WindowFromPoint(屏幕中心) = 0x204FA，覆盖窗 = 0x26076C
+[PASS] S1-C 不抢焦点 — 显示前 = 0x40360，显示后 = 0x40360
 [PASS] S1-D 不进 Alt+Tab / 任务栏（样式机制） — WS_EX_TOOLWINDOW=True WS_EX_APPWINDOW=False
 [PASS] S1-E 覆盖窗几何 — 期望 (1350,950) 420×180，实际一致
 [PASS] S1-F 可收起 — SW_HIDE 后 IsWindowVisible=False
@@ -112,21 +152,23 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 
 | 指标 | 目标 | 实测 |
 |---|---|---|
-| 空载私有工作集 | — | 5.3 MB |
-| 空载提交大小 | ≤ 45 MB | 8.7 MB |
-| WM_INPUT 回调 p50 / p99 | — | 0.018 / 0.472 ms |
-| 按键到首帧 | ≤ 120 ms | 未测（S2.5 接线后打点） |
+| 空载私有工作集 | — | 5.9 MB |
+| 空载提交大小 | ≤ 45 MB | 9.3 MB |
+| WM_INPUT 回调 p50 / p99 | — | 0.039 / 0.555 ms |
+| 空闲 10s CPU 增量 | < 100 ms | 15.6 ms |
+| 按键到首帧 | ≤ 120 ms | 未打点（S3 面板渲染完成后测） |
 | 常驻句柄 | ≤ 500 | 未测（S5 托盘完成后测） |
 
 **变异测试**（确认断言不是恒真）：
 
 | 变异 | 结果 |
 |---|---|
-| `ShouldFlash` 恒返回 true | Case06 FAIL |
-| 删除「全部松开解除阻塞」 | Case05 FAIL |
-| 长按判定 `>=` 改成 `>` | Case02 FAIL，Case01 仍 PASS |
-| 删除「修饰键自动重复守卫」 | Case02 FAIL（面板被打掉） |
-| 解除阻塞时不看非修饰键是否按住 | Case05 FAIL |
+| `ShouldFlash` 恒返回 true | 单元 Case06 FAIL |
+| 删除「全部松开解除阻塞」 | 单元 Case05 FAIL |
+| 长按判定 `>=` 改成 `>` | 单元 Case02 FAIL，Case01 仍 PASS |
+| 删除「修饰键自动重复守卫」 | 单元 Case02 FAIL（面板被打掉） |
+| 解除阻塞时不看非修饰键是否按住 | 单元 Case05 FAIL |
+| `OnTick` 改用 `Environment.TickCount64`（时钟不同源） | 集成 Case01 FAIL（100ms 就弹面板） |
 | S1：`UpdateLayeredWindow` 尺寸改 300×300 | S1-E FAIL，退出码 1 |
 
 ## 与规格的偏差
@@ -145,6 +187,15 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
   （实测 2313 字符只到 587）。该注入不经过 Raw Input 通路，故回调耗时由 `--selftest`
   用 F24 独立测。
 - **回调耗时用 p50 + p99 双判据**：单看 p99 会在机器繁忙时漂到 1.3 ms 造成误报。
+- **F9 手动开关已删除**，不是「保留 + 互斥」：保留就得在触发前 `machine.Reset()`，
+  两套状态机迟早打架，而它只在调试期有用。
+- **集成测试要求独占前台**：它自己创建测试窗口并 `SetForegroundWindow`，抢不到就直接报
+  「无法把目标窗口切到前台」而不是静默降级。每个用例开头都会先松开所有注入的键
+  （`ReleaseAll`），避免上一个用例残留的按键状态污染下一个——这一点是实测出来的：
+  不做的话约 1/5 概率出现「长按不弹」的假失败。
+- **残留风险**：若系统层面真的丢了一次修饰键 key-up，`_heldModifiers` 会一直带着它，
+  导致 `blockedUntilRelease` 永不解除。前台切换只清理非修饰键（S2 整改第 2 项的范围），
+  修饰键没有对应兜底。Raw Input 走 `INPUTSINK`，key-up 丢失概率低，暂按已知限制记录。
 
 ## [SPEC-GAP]
 
@@ -156,14 +207,15 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 | 4 | §4.4 | 未定义 `knownShortcuts` 里有无法解析条目时的行为 | 抛 `ArgumentException`，配置错误必须显式失败 |
 | 5 | §3.1 | 未定义同一进程名出现在多个档案时的行为 | 先加载者占用，后来者整份跳过并记入 `LoadErrors` |
 | 6 | §3.1 | 未定义档案 JSON 损坏时的行为 | 跳过该档案并记入 `LoadErrors`，不让一份坏文件把程序拖垮；错误不静默 |
+| 7 | §5.3.2 | 只给了 `DwellMs` 的范围 80–5000，未说越界怎么处理；`FlashMs` 干脆没给范围 | 两者都按 80–5000 校验，越界抛 `ArgumentOutOfRangeException`（构造与赋值都校验） |
 
 ## 进度
 
 | 阶段 | 状态 |
 |---|---|
 | S1 输入通路与「不干扰」 | 通过（含 5 项整改） |
-| S2 四条规则 | 完成（15/15 用例通过，S1 回归 8/8） |
-| S2.5 状态机接线 | 未开始（需下一份提示词） |
+| S2 四条规则 | 通过（15/15 用例，含 4 项整改） |
+| S2.5 状态机接线 | 完成（集成 10/10，S1 回归 8/8） |
 | S3 数据与渲染 | 未开始 |
 | S4 游戏抑制接入 | 未开始 |
 | S5 工程化 | 未开始 |
