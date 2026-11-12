@@ -49,9 +49,22 @@ public sealed class HudModel
 
     public IReadOnlyList<HudGroup> Groups { get; init; } = Array.Empty<HudGroup>();
 
+    /// <summary>过滤后的可见条目总数（跨页合计）。</summary>
     public int TotalCount { get; init; }
 
     public int HiddenByKnownCount { get; init; }
 
     public bool HasProfile { get; init; }
+
+    /// <summary>当前页序号，从 0 开始。</summary>
+    public int PageIndex { get; init; }
+
+    /// <summary>总页数，至少 1。</summary>
+    public int PageCount { get; init; } = 1;
+
+    /// <summary>
+    /// 多页时面板必须固定高度，否则翻页会重建 DIB 并闪一下（§6.1）。
+    /// 这里给出本模型应占的**格数预算**：0 表示按实际内容算。
+    /// </summary>
+    public int CellBudget { get; init; }
 }

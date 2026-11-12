@@ -1,30 +1,144 @@
 {
   "app": "code",
   "displayName": "VS Code",
-  "processNames": ["Code.exe"],
+  "processNames": [
+    "Code.exe"
+  ],
   "shortcuts": [
-    { "keys": "Ctrl+P", "action": "快速打开文件", "group": "导航" },
-    { "keys": "Ctrl+G", "action": "跳转到行", "group": "导航" },
-    { "keys": "Ctrl+T", "action": "显示所有符号", "group": "导航" },
-    { "keys": "Ctrl+Home", "action": "跳到文件开头", "group": "导航" },
-    { "keys": "Ctrl+End", "action": "跳到文件结尾", "group": "导航" },
-    { "keys": "Ctrl+D", "action": "选中下一个", "group": "编辑" },
-    { "keys": "Ctrl+L", "action": "选中当前行", "group": "编辑" },
-    { "keys": "Ctrl+/", "action": "切换行注释", "group": "编辑" },
-    { "keys": "Ctrl+[", "action": "减少缩进", "group": "编辑" },
-    { "keys": "Ctrl+]", "action": "增加缩进", "group": "编辑" },
-    { "keys": "Ctrl+Space", "action": "触发建议", "group": "编辑" },
-    { "keys": "Ctrl+M", "action": "Tab 焦点模式", "group": "编辑" },
-    { "keys": "Ctrl+H", "action": "查找并替换", "group": "查找" },
-    { "keys": "Ctrl+1", "action": "聚焦第 1 组", "group": "视图" },
-    { "keys": "Ctrl+2", "action": "聚焦第 2 组", "group": "视图" },
-    { "keys": "Ctrl+3", "action": "聚焦第 3 组", "group": "视图" },
-    { "keys": "Ctrl+B", "action": "切换侧边栏", "group": "视图" },
-    { "keys": "Ctrl+`", "action": "切换终端", "group": "视图" },
-    { "keys": "Ctrl+\\", "action": "拆分编辑器", "group": "视图" },
-    { "keys": "Ctrl+=", "action": "放大", "group": "视图" },
-    { "keys": "Ctrl+-", "action": "缩小", "group": "视图" },
-    { "keys": "Ctrl+Q", "action": "快速打开视图", "group": "视图" },
-    { "keys": "Ctrl+F5", "action": "开始运行", "group": "调试" }
+    {
+      "keys": "Ctrl+P",
+      "action": "快速打开文件",
+      "group": "导航"
+    },
+    {
+      "keys": "Ctrl+G",
+      "action": "跳转到行",
+      "group": "导航"
+    },
+    {
+      "keys": "Ctrl+T",
+      "action": "显示所有符号",
+      "group": "导航"
+    },
+    {
+      "keys": "Ctrl+Home",
+      "action": "跳到文件开头",
+      "group": "导航"
+    },
+    {
+      "keys": "Ctrl+End",
+      "action": "跳到文件结尾",
+      "group": "导航"
+    },
+    {
+      "keys": "Ctrl+Shift+P",
+      "action": "命令面板",
+      "group": "导航"
+    },
+    {
+      "keys": "Ctrl+D",
+      "action": "选中下一个",
+      "group": "编辑"
+    },
+    {
+      "keys": "Ctrl+L",
+      "action": "选中当前行",
+      "group": "编辑"
+    },
+    {
+      "keys": "Ctrl+/",
+      "action": "切换行注释",
+      "group": "编辑"
+    },
+    {
+      "keys": "Ctrl+[",
+      "action": "减少缩进",
+      "group": "编辑"
+    },
+    {
+      "keys": "Ctrl+]",
+      "action": "增加缩进",
+      "group": "编辑"
+    },
+    {
+      "keys": "Ctrl+Space",
+      "action": "触发建议",
+      "group": "编辑"
+    },
+    {
+      "keys": "Ctrl+M",
+      "action": "Tab 焦点模式",
+      "group": "编辑"
+    },
+    {
+      "keys": "Ctrl+H",
+      "action": "查找并替换",
+      "group": "查找"
+    },
+    {
+      "keys": "Ctrl+Shift+F",
+      "action": "在文件中搜索",
+      "group": "查找"
+    },
+    {
+      "keys": "Ctrl+1",
+      "action": "聚焦第 1 组",
+      "group": "视图"
+    },
+    {
+      "keys": "Ctrl+2",
+      "action": "聚焦第 2 组",
+      "group": "视图"
+    },
+    {
+      "keys": "Ctrl+3",
+      "action": "聚焦第 3 组",
+      "group": "视图"
+    },
+    {
+      "keys": "Ctrl+B",
+      "action": "切换侧边栏",
+      "group": "视图"
+    },
+    {
+      "keys": "Ctrl+`",
+      "action": "切换终端",
+      "group": "视图"
+    },
+    {
+      "keys": "Ctrl+\\",
+      "action": "拆分编辑器",
+      "group": "视图"
+    },
+    {
+      "keys": "Ctrl+=",
+      "action": "放大",
+      "group": "视图"
+    },
+    {
+      "keys": "Ctrl+-",
+      "action": "缩小",
+      "group": "视图"
+    },
+    {
+      "keys": "Ctrl+Q",
+      "action": "快速打开视图",
+      "group": "视图"
+    },
+    {
+      "keys": "Ctrl+F5",
+      "action": "开始运行",
+      "group": "调试"
+    },
+    {
+      "keys": "Ctrl+Shift+E",
+      "action": "资源管理器",
+      "group": "视图"
+    },
+    {
+      "keys": "Ctrl+Shift+G",
+      "action": "源代码管理",
+      "group": "视图"
+    }
   ]
 }

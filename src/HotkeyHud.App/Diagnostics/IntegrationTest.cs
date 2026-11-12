@@ -79,10 +79,10 @@ internal static class IntegrationTest
             return $"State={hud.State}，可见=False";
         });
 
-        Case("Case02 按住 400ms 面板出现且标题正确", () =>
+        Case("Case02 按住 550ms 面板出现且标题正确", () =>
         {
-            Pump(300);
-            Require(hud.IsOverlayVisible, "累计 400ms 面板仍未出现");
+            Pump(450);
+            Require(hud.IsOverlayVisible, "累计 550ms 面板仍未出现");
             Require(
                 hud.CurrentLabel.Contains("HudTestApp", StringComparison.Ordinal),
                 $"label 未包含应用名：\"{hud.CurrentLabel}\"");
@@ -112,20 +112,20 @@ internal static class IntegrationTest
 
             // 关键：按下 C 之后 Ctrl 继续按住 400ms，累计 460ms 已远超 300ms 阈值。
             // 若「非修饰键取消 Armed」失效，面板必然在这段里出现——这样才不是重复 Case03。
-            everVisible |= PumpTracking(400, hud);
+            everVisible |= PumpTracking(560, hud);
 
             KeyUp(VkC);
             KeyUp(VkControl);
             everVisible |= PumpTracking(150, hud);
 
             Require(!everVisible, "Ctrl 按住超过阈值后面板出现，说明按 C 没有取消 Armed");
-            return "Ctrl 累计按住 460ms，面板从未出现";
+            return "Ctrl 累计按住 620ms，面板从未出现";
         });
 
         Case("Case05 熟记组合立即收起、非熟记组合高亮", () =>
         {
             PressAndArm(hud, target.Handle);
-            PumpTracking(350, hud);
+            PumpTracking(550, hud);
             Require(hud.IsOverlayVisible,
                 $"前置条件不成立：面板未显示（State={hud.State}，计时器={hud.TimerRunning}）");
 
@@ -139,7 +139,7 @@ internal static class IntegrationTest
             KeyUp(VkControl);
             Pump(150);
             PressAndArm(hud, target.Handle);
-            PumpTracking(350, hud);
+            PumpTracking(550, hud);
             Require(hud.IsOverlayVisible, "前置条件不成立：面板未重新显示");
 
             var before = PanelRect(hud);
@@ -166,7 +166,7 @@ internal static class IntegrationTest
         Case("Case06 前台切换立即收起面板", () =>
         {
             PressAndArm(hud, target.Handle);
-            PumpTracking(350, hud);
+            PumpTracking(550, hud);
             Require(hud.IsOverlayVisible,
                 $"前置条件不成立：面板未显示（State={hud.State}，计时器={hud.TimerRunning}）");
 
@@ -191,7 +191,7 @@ internal static class IntegrationTest
         Case("Case07 未收录应用显示「未收录」", () =>
         {
             PressAndArm(hud, target.Handle);
-            PumpTracking(350, hud);
+            PumpTracking(550, hud);
             bool shown = hud.IsOverlayVisible;
             string label = hud.CurrentLabel;
             KeyUp(VkControl);

@@ -1,16 +1,69 @@
 {
   "app": "notepad",
   "displayName": "记事本",
-  "processNames": ["notepad.exe"],
+  "processNames": [
+    "notepad.exe"
+  ],
   "shortcuts": [
-    { "keys": "Ctrl+H", "action": "查找并替换", "group": "查找" },
-    { "keys": "Ctrl+Home", "action": "移到文档开头", "group": "导航" },
-    { "keys": "Ctrl+End", "action": "移到文档末尾", "group": "导航" },
-    { "keys": "Ctrl+Up", "action": "上一段开头", "group": "导航" },
-    { "keys": "Ctrl+Down", "action": "下一段开头", "group": "导航" },
-    { "keys": "Ctrl+Left", "action": "上一词开头", "group": "导航" },
-    { "keys": "Ctrl+Right", "action": "下一词开头", "group": "导航" },
-    { "keys": "Ctrl+Backspace", "action": "删除左侧词", "group": "编辑" },
-    { "keys": "Ctrl+Delete", "action": "删除右侧词", "group": "编辑" }
+    {
+      "keys": "Ctrl+H",
+      "action": "查找并替换",
+      "group": "查找"
+    },
+    {
+      "keys": "Ctrl+F",
+      "action": "查找",
+      "group": "查找"
+    },
+    {
+      "keys": "Ctrl+Home",
+      "action": "移到文档开头",
+      "group": "导航"
+    },
+    {
+      "keys": "Ctrl+End",
+      "action": "移到文档末尾",
+      "group": "导航"
+    },
+    {
+      "keys": "Ctrl+Up",
+      "action": "上一段开头",
+      "group": "导航"
+    },
+    {
+      "keys": "Ctrl+Down",
+      "action": "下一段开头",
+      "group": "导航"
+    },
+    {
+      "keys": "Ctrl+Left",
+      "action": "上一词开头",
+      "group": "导航"
+    },
+    {
+      "keys": "Ctrl+Right",
+      "action": "下一词开头",
+      "group": "导航"
+    },
+    {
+      "keys": "Ctrl+Backspace",
+      "action": "删除左侧词",
+      "group": "编辑"
+    },
+    {
+      "keys": "Ctrl+Delete",
+      "action": "删除右侧词",
+      "group": "编辑"
+    },
+    {
+      "keys": "Ctrl+A",
+      "action": "全选",
+      "group": "编辑"
+    },
+    {
+      "keys": "Ctrl+S",
+      "action": "保存",
+      "group": "文件"
+    }
   ]
 }

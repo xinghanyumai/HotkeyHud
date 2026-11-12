@@ -1,0 +1,219 @@
+{
+  "app": "system",
+  "displayName": "Windows",
+  "processNames": [
+    "*"
+  ],
+  "shortcuts": [
+    {
+      "keys": "Win+D",
+      "action": "显示桌面",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+E",
+      "action": "打开资源管理器",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+L",
+      "action": "锁定计算机",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+R",
+      "action": "打开运行",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+I",
+      "action": "打开设置",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+S",
+      "action": "打开搜索",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+V",
+      "action": "剪贴板历史",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+A",
+      "action": "操作中心",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+X",
+      "action": "快速链接菜单",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+P",
+      "action": "投影设置",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+Tab",
+      "action": "任务视图",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+Left",
+      "action": "贴靠到左侧",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+Right",
+      "action": "贴靠到右侧",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+Up",
+      "action": "最大化窗口",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+Down",
+      "action": "最小化窗口",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+Shift+S",
+      "action": "区域截图",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+Ctrl+D",
+      "action": "新建桌面",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+Ctrl+F4",
+      "action": "关闭当前桌面",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+Ctrl+Left",
+      "action": "切到左侧桌面",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+Ctrl+Right",
+      "action": "切到右侧桌面",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+PrintScreen",
+      "action": "全屏截图存文件",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+M",
+      "action": "最小化所有窗口",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+Shift+M",
+      "action": "还原最小化窗口",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+Home",
+      "action": "最小化其他窗口",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+,",
+      "action": "临时预览桌面",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+.",
+      "action": "表情符号面板",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+Space",
+      "action": "切换输入语言",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+N",
+      "action": "通知中心",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+W",
+      "action": "小组件",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+G",
+      "action": "游戏栏",
+      "group": "系统"
+    },
+    {
+      "keys": "Win+H",
+      "action": "语音听写",
+      "group": "系统"
+    },
+    {
+      "keys": "Alt+Tab",
+      "action": "切换窗口",
+      "group": "系统"
+    },
+    {
+      "keys": "Alt+F4",
+      "action": "关闭当前窗口",
+      "group": "系统"
+    },
+    {
+      "keys": "Alt+Esc",
+      "action": "按顺序切换窗口",
+      "group": "系统"
+    },
+    {
+      "keys": "Alt+Enter",
+      "action": "查看属性",
+      "group": "系统"
+    },
+    {
+      "keys": "Alt+Space",
+      "action": "窗口上下文菜单",
+      "group": "系统"
+    },
+    {
+      "keys": "Alt+Left",
+      "action": "后退",
+      "group": "系统"
+    },
+    {
+      "keys": "Alt+Right",
+      "action": "前进",
+      "group": "系统"
+    },
+    {
+      "keys": "Alt+PrintScreen",
+      "action": "截取活动窗口",
+      "group": "系统"
+    },
+    {
+      "keys": "Ctrl+Shift+Esc",
+      "action": "任务管理器",
+      "group": "系统"
+    },
+    {
+      "keys": "Ctrl+Alt+Delete",
+      "action": "安全屏幕",
+      "group": "系统"
+    },
+    {
+      "keys": "Ctrl+Esc",
+      "action": "打开开始菜单",
+      "group": "系统"
+    }
+  ]
+}

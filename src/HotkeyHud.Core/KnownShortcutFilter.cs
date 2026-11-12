@@ -9,22 +9,13 @@ public sealed class KnownShortcutFilter
     /// <summary>§4.2 默认名单。语义上等价于「用户已形成肌肉记忆、不需要看到」的组合。</summary>
     public static IReadOnlyList<string> DefaultCombos { get; } = new[]
     {
-        // 剪贴板
+        // v1.5 收窄：只保留 Ctrl 单修饰键的高频编辑类。
+        // Alt+* 与 Win+* 全部移除——用户明确想看到 Alt+F4。
         "Ctrl+C", "Ctrl+V", "Ctrl+X",
-        // 撤销重做
-        "Ctrl+Z", "Ctrl+Y", "Ctrl+Shift+Z",
-        // 全选保存
-        "Ctrl+A", "Ctrl+S", "Ctrl+Shift+S",
-        // 查找打印
+        "Ctrl+Z", "Ctrl+Y",
+        "Ctrl+A", "Ctrl+S",
         "Ctrl+F", "Ctrl+P",
-        // 新建打开关闭
-        "Ctrl+N", "Ctrl+O", "Ctrl+W", "Ctrl+T", "Ctrl+Shift+N", "Ctrl+Shift+T",
-        // 格式
-        "Ctrl+B", "Ctrl+I", "Ctrl+U",
-        // 窗口
-        "Alt+Tab", "Alt+F4", "Ctrl+Tab", "Ctrl+F4",
-        // 系统
-        "Win+D", "Win+E", "Win+L", "Win+R", "Win+Tab",
+        "Ctrl+N", "Ctrl+O", "Ctrl+W", "Ctrl+T",
     };
 
     private readonly HashSet<Combo> _combos;

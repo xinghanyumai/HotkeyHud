@@ -26,6 +26,9 @@ public sealed class ShortcutRepository
     private IReadOnlyList<string> _loadErrors = Array.Empty<string>();
     private int _profileCount;
 
+    /// <summary>系统档案（<c>processNames: ["*"]</c>）。未收录应用时仍然显示它。</summary>
+    public AppShortcutProfile? SystemProfile { get; private set; }
+
     public ShortcutRepository(string appsDirectory)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(appsDirectory);
@@ -56,6 +59,7 @@ public sealed class ShortcutRepository
         var errors = new List<string>();
         int dropped = 0;
         int loaded = 0;
+        AppShortcutProfile? systemProfile = null;
 
         // 目录不存在 = 还没有任何档案，是合法状态，不是错误
         if (Directory.Exists(_directory))
@@ -67,6 +71,21 @@ public sealed class ShortcutRepository
                 AppShortcutProfile? profile = TryLoadProfile(file, ref dropped, errors);
                 if (profile is null)
                 {
+                    continue;
+                }
+
+                // 通配档案（系统快捷键）单独收，不参与进程名索引，也不计入 ProfileCount
+                if (profile.ProcessNames.Any(name => name.Trim() == "*"))
+                {
+                    if (systemProfile is null)
+                    {
+                        systemProfile = profile;
+                    }
+                    else
+                    {
+                        errors.Add($"{file}: 已存在系统档案，整份跳过");
+                    }
+
                     continue;
                 }
 
@@ -99,6 +118,7 @@ public sealed class ShortcutRepository
         _byProcess = byProcess;
         _loadErrors = errors;
         _profileCount = loaded;
+        SystemProfile = systemProfile;
         DroppedShortcutCount = dropped;
     }
 

@@ -58,6 +58,12 @@ public sealed class OverlayForm : Form
     /// <summary>本次显示一共推了几帧。1 = 没有动画；验收用它区分「有淡入」与「无淡入」。</summary>
     public int FadeFramesPushed { get; private set; }
 
+    /// <summary>钩子吞掉 ↑/↓ 后投递的翻页消息。参数为 +1 / -1。</summary>
+    public const int WmPageRequest = 0x8000 + 0x51;
+
+    /// <summary>翻页请求。钩子只负责投递，真正的翻页由这里转给状态机。</summary>
+    public event Action<int>? PageRequested;
+
     /// <summary>系统「减少动画」开关（SPI_GETCLIENTAREAANIMATION）。</summary>
     public static bool SystemAnimationsEnabled()
         => !NativeMethods.SystemParametersInfo(NativeMethods.SPI_GETCLIENTAREAANIMATION, 0, out bool enabled, 0)
@@ -180,6 +186,9 @@ public sealed class OverlayForm : Form
                 return;
             case NativeMethods.WM_ERASEBKGND:
                 m.Result = (IntPtr)1;
+                return;
+            case WmPageRequest:
+                PageRequested?.Invoke(m.WParam.ToInt32());
                 return;
         }
 

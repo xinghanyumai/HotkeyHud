@@ -6,7 +6,7 @@ namespace HotkeyHud.App.Shell;
 /// </summary>
 public sealed class AppConfig
 {
-    public const int DefaultDwellMs = 300;
+    public const int DefaultDwellMs = 450;
     public const int MinDwellMs = 80;
     public const int MaxDwellMs = 5000;
 

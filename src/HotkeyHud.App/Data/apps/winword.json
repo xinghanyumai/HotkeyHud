@@ -1,22 +1,139 @@
 {
   "app": "winword",
   "displayName": "Word",
-  "processNames": ["WINWORD.EXE"],
+  "processNames": [
+    "WINWORD.EXE"
+  ],
   "shortcuts": [
-    { "keys": "Ctrl+K", "action": "插入超链接", "group": "插入" },
-    { "keys": "Ctrl+Enter", "action": "插入分页符", "group": "插入" },
-    { "keys": "Ctrl+L", "action": "左对齐", "group": "段落" },
-    { "keys": "Ctrl+E", "action": "居中", "group": "段落" },
-    { "keys": "Ctrl+R", "action": "右对齐", "group": "段落" },
-    { "keys": "Ctrl+J", "action": "两端对齐", "group": "段落" },
-    { "keys": "Ctrl+M", "action": "增加缩进", "group": "段落" },
-    { "keys": "Ctrl+Q", "action": "清除段落格式", "group": "段落" },
-    { "keys": "Ctrl+1", "action": "单倍行距", "group": "段落" },
-    { "keys": "Ctrl+2", "action": "双倍行距", "group": "段落" },
-    { "keys": "Ctrl+5", "action": "1.5 倍行距", "group": "段落" },
-    { "keys": "Ctrl+[", "action": "字号减小", "group": "字体" },
-    { "keys": "Ctrl+]", "action": "字号增大", "group": "字体" },
-    { "keys": "Ctrl+H", "action": "替换", "group": "编辑" },
-    { "keys": "Ctrl+G", "action": "定位", "group": "编辑" }
+    {
+      "keys": "Ctrl+K",
+      "action": "插入超链接",
+      "group": "插入"
+    },
+    {
+      "keys": "Ctrl+Enter",
+      "action": "插入分页符",
+      "group": "插入"
+    },
+    {
+      "keys": "Ctrl+Space",
+      "action": "清除字符格式",
+      "group": "字体"
+    },
+    {
+      "keys": "Ctrl+[",
+      "action": "字号减小",
+      "group": "字体"
+    },
+    {
+      "keys": "Ctrl+]",
+      "action": "字号增大",
+      "group": "字体"
+    },
+    {
+      "keys": "Ctrl+B",
+      "action": "加粗",
+      "group": "字体"
+    },
+    {
+      "keys": "Ctrl+I",
+      "action": "斜体",
+      "group": "字体"
+    },
+    {
+      "keys": "Ctrl+U",
+      "action": "下划线",
+      "group": "字体"
+    },
+    {
+      "keys": "Ctrl+L",
+      "action": "左对齐",
+      "group": "段落"
+    },
+    {
+      "keys": "Ctrl+E",
+      "action": "居中",
+      "group": "段落"
+    },
+    {
+      "keys": "Ctrl+R",
+      "action": "右对齐",
+      "group": "段落"
+    },
+    {
+      "keys": "Ctrl+J",
+      "action": "两端对齐",
+      "group": "段落"
+    },
+    {
+      "keys": "Ctrl+M",
+      "action": "增加缩进",
+      "group": "段落"
+    },
+    {
+      "keys": "Ctrl+Q",
+      "action": "清除段落格式",
+      "group": "段落"
+    },
+    {
+      "keys": "Ctrl+1",
+      "action": "单倍行距",
+      "group": "段落"
+    },
+    {
+      "keys": "Ctrl+2",
+      "action": "双倍行距",
+      "group": "段落"
+    },
+    {
+      "keys": "Ctrl+5",
+      "action": "1.5 倍行距",
+      "group": "段落"
+    },
+    {
+      "keys": "Ctrl+Shift+8",
+      "action": "显示编辑标记",
+      "group": "段落"
+    },
+    {
+      "keys": "Ctrl+Shift+Space",
+      "action": "不间断空格",
+      "group": "插入"
+    },
+    {
+      "keys": "Ctrl+H",
+      "action": "替换",
+      "group": "编辑"
+    },
+    {
+      "keys": "Ctrl+G",
+      "action": "定位",
+      "group": "编辑"
+    },
+    {
+      "keys": "Ctrl+A",
+      "action": "全选",
+      "group": "编辑"
+    },
+    {
+      "keys": "Ctrl+S",
+      "action": "保存",
+      "group": "文件"
+    },
+    {
+      "keys": "Ctrl+O",
+      "action": "打开",
+      "group": "文件"
+    },
+    {
+      "keys": "Ctrl+N",
+      "action": "新建",
+      "group": "文件"
+    },
+    {
+      "keys": "Ctrl+W",
+      "action": "关闭文档",
+      "group": "文件"
+    }
   ]
 }

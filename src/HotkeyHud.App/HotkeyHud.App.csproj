@@ -7,6 +7,7 @@
   <!-- 应用档案随 exe 一起输出，运行时从 BaseDirectory\Data\apps 读取 -->
   <ItemGroup>
     <Content Include="Data\apps\*.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="app.ico" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <PropertyGroup>
@@ -19,6 +20,7 @@
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <!-- §6 v1.4：Per-Monitor V2。SystemAware 下副屏会被系统虚拟化，字会糊 -->
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+    <ApplicationIcon>app.ico</ApplicationIcon>
   </PropertyGroup>
 
 </Project>

@@ -93,19 +93,22 @@ internal static class RenderGallery
             string detail = Capture(overlay, longList, null,
                 Path.Combine(outputDirectory, "04-long-list.png"), expectText: true);
 
-            int hidden = longList.TotalCount - HudPanel.MaxVisibleItems;
-            string expected = $"还有 {hidden} 个未显示 · 松开 Ctrl 隐藏";
+            string expected = longList.PageCount > 1
+                ? $"第 1/{longList.PageCount} 页 · ↑↓ 翻页 · 松开 Ctrl 隐藏"
+                : $"共 {longList.TotalCount} 条 · 松开 Ctrl 隐藏";
 
             Require(overlay.LastItemCount == HudPanel.MaxVisibleItems,
                 $"实际画出 {overlay.LastItemCount} 条，期望 {HudPanel.MaxVisibleItems} 条");
             Require(HudPanel.FooterText(longList) == expected,
                 $"底部文案不符：\"{HudPanel.FooterText(longList)}\"，期望 \"{expected}\"");
 
-            // 键帽只显示非修饰键 + 缩写表（§6.1），这是「文案不被挤掉」的机制保证
-            Require(HudPanel.KeycapText("Ctrl+K") == "K", "键帽未省略修饰键");
-            Require(HudPanel.KeycapText("Ctrl+Backspace") == "Bksp", "Backspace 未缩写为 Bksp");
-            Require(HudPanel.KeycapText("Ctrl+PageDown") == "PgDn", "PageDown 未缩写为 PgDn");
-            Require(HudPanel.KeycapText("Ctrl+[") == "[", "符号键被误处理");
+            // 键帽只显示非修饰键 + 缩写表（§6.1）。HudBuilder 已去掉触发修饰键，
+            // 这里只需保证「剩下的修饰键保留、长键名缩写」
+            Require(HudPanel.KeycapText("K") == "K", "单键被误处理");
+            Require(HudPanel.KeycapText("Shift+K") == "Shift+K", "剩余修饰键应保留");
+            Require(HudPanel.KeycapText("Backspace") == "Bksp", "Backspace 未缩写为 Bksp");
+            Require(HudPanel.KeycapText("Shift+PageDown") == "Shift+PgDn", "带修饰键的长键名未缩写");
+            Require(HudPanel.KeycapText("[") == "[", "符号键被误处理");
 
             double logicalHeight = LogicalHeight(overlay);
             double limit = Math.Min(MaxPanelHeightCap, WorkAreaLogicalHeight(overlay) * MaxPanelHeightRatio);

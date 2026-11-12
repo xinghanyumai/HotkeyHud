@@ -3,6 +3,7 @@ using HotkeyHud.App.Platform;
 using HotkeyHud.App.Shell;
 using HotkeyHud.App.UI;
 using HotkeyHud.Core;
+using KeyNames = HotkeyHud.Core.Keys;
 
 namespace HotkeyHud.App;
 
@@ -30,7 +31,12 @@ public sealed class HudApp : IDisposable
     private readonly System.Windows.Forms.Timer _timer;
     private readonly System.Windows.Forms.Timer _suppressTimer;
 
+    private const int MaxVisibleMs = 15_000;
+
     private HudModel? _currentModel;
+    private LowLevelKeyboardHook? _pageHook;
+    private int _pageIndex;
+    private long _shownAtMs;
     private bool _manualPause;
     private bool _gameSuppressed;
     private bool _disposed;
@@ -58,6 +64,8 @@ public sealed class HudApp : IDisposable
         _machine.ShowRequested += OnShowRequested;
         _machine.ComboFlashed += OnComboFlashed;
         _machine.HideRequested += OnHideRequested;
+        _machine.PageRequested += OnPageRequested;
+        _overlay.PageRequested += OnPageRequested;
         _timer.Tick += OnTimerTick;
         _suppressTimer.Tick += OnSuppressTick;
 
@@ -96,6 +104,15 @@ public sealed class HudApp : IDisposable
 
     /// <summary>游戏 / 全屏抑制的当前判定（§2.2）。只读，由采集结果驱动。</summary>
     public bool GameSuppressed => _gameSuppressed;
+
+    /// <summary>当前面板模型（含分页信息），验收用。</summary>
+    public HudModel? CurrentModel => _currentModel;
+
+    /// <summary>外部请求翻页，等价于用户按 ↑/↓。验收用它模拟钩子投递。</summary>
+    public void RequestPage(int delta) => _machine.RequestPage(delta);
+
+    /// <summary>翻页钩子当前是否装着。验收用它区分「多页装了」与「单页没装」。</summary>
+    public bool IsPageHookInstalled => _pageHook?.IsInstalled == true;
 
     /// <summary>最近一次抑制判定的命中原因，空串表示未抑制。</summary>
     public string SuppressReason { get; private set; } = string.Empty;
@@ -208,10 +225,20 @@ public sealed class HudApp : IDisposable
             _machine.OnTick(_input.NowMs);
             SyncTimer();
 
-            // 光标换屏或换到另一半屏幕时重新贴边，保证 100ms 内翻到另一侧
+            // 安全阀：key-up 丢失会让面板一直挂着，钩子就一直吞上下键——这比不能翻页严重得多
             if (IsOverlayVisible)
             {
-                _overlay.RefreshAnchor();
+                if (_input.NowMs - _shownAtMs > MaxVisibleMs)
+                {
+                    _machine.Reset();
+                    _overlay.HideOverlay();
+                    IsOverlayVisible = false;
+                    UpdatePageHook();
+                }
+                else
+                {
+                    _overlay.RefreshAnchor();
+                }
             }
         }
         catch (Exception ex)
@@ -228,13 +255,87 @@ public sealed class HudApp : IDisposable
         }
 
         // 仓库在启动时已 Reload，这里只查内存，不做 I/O（§六 禁止 3）
+        _pageIndex = 0;
+        _shownAtMs = _input.NowMs;
+        BuildAndRender(modifier);
+    }
+
+    private void BuildAndRender(Modifier modifier)
+    {
         string processName = _probe.ProcessName;
         string displayName = processName.Length > 0 ? processName : "未知进程";
 
         _currentModel = HudBuilder.Build(
-            _repository.FindByProcess(processName), modifier, _known, displayName);
+            _repository.FindByProcess(processName),
+            _repository.SystemProfile,
+            modifier,
+            _known,
+            displayName,
+            _pageIndex);
 
         RenderModel(_currentModel, null);
+        UpdatePageHook();
+    }
+
+    /// <summary>
+    /// 翻页。边界夹住，不循环；翻页不改变状态，仍是 Visible。
+    /// 两条通路都汇到这里：钩子吞键后投递的消息，以及 Raw Input 送进状态机的 ↑/↓。
+    /// </summary>
+    private void OnPageRequested(int delta)
+    {
+        if (_currentModel is null || _currentModel.PageCount <= 1)
+        {
+            return;
+        }
+
+        int next = Math.Clamp(_currentModel.PageIndex + delta, 0, _currentModel.PageCount - 1);
+        if (next == _currentModel.PageIndex)
+        {
+            return; // 已在边界：不动，也不循环
+        }
+
+        _pageIndex = next;
+        BuildAndRender(_currentModel.Modifier);
+    }
+
+    /// <summary>
+    /// 只在「多页且面板可见」时装钩子（§2.3）。单页完全不装——绝大多数时候用户感觉不到输入被拦截。
+    /// </summary>
+    private void UpdatePageHook()
+    {
+        bool needed = IsOverlayVisible && _currentModel is { PageCount: > 1 };
+
+        if (needed && _pageHook is null)
+        {
+            _pageHook = new LowLevelKeyboardHook(ShouldSwallowPageKey, OnPageKeySwallowed);
+            _pageHook.Install();
+            return;
+        }
+
+        if (!needed && _pageHook is not null)
+        {
+            _pageHook.Dispose();
+            _pageHook = null;
+        }
+    }
+
+    private static bool ShouldSwallowPageKey(int virtualKey)
+        => virtualKey is KeyNames.VkUp or KeyNames.VkDown;
+
+    /// <summary>钩子吞掉翻页键后的回调：只投递消息，绝不在钩子里渲染。</summary>
+    private void OnPageKeySwallowed(int virtualKey)
+        => PostPageRequest(virtualKey == KeyNames.VkDown ? 1 : -1);
+
+    /// <summary>
+    /// 钩子回调里只做一件事：把翻页意图投递出去。真正的翻页在消息循环里做，
+    /// 避免在钩子里渲染（钩子有超时限制，超时会被系统静默卸掉）。
+    /// </summary>
+    private void PostPageRequest(int delta)
+    {
+        if (IsOverlayVisible && _overlay.IsHandleCreated)
+        {
+            NativeMethods.PostMessage(_overlay.Handle, OverlayForm.WmPageRequest, delta, 0);
+        }
     }
 
     private void OnComboFlashed(Combo combo)
@@ -253,6 +354,7 @@ public sealed class HudApp : IDisposable
         _overlay.HideOverlay();
         IsOverlayVisible = false;
         HighlightedCombo = null;
+        UpdatePageHook(); // 收起即卸钩，不延迟
     }
 
     private void RenderModel(HudModel model, Combo? highlight)
@@ -269,7 +371,8 @@ public sealed class HudApp : IDisposable
     /// <summary>§3.2 计时器按需启停：只有 Armed / Flashing 需要 tick，Idle 必须停。</summary>
     private void SyncTimer()
     {
-        bool shouldRun = _machine.State is HudState.Armed or HudState.Flashing;
+        // Visible 期间也要跑：安全阀（15 秒）与重新贴边都挂在这个 tick 上
+        bool shouldRun = _machine.State is HudState.Armed or HudState.Visible or HudState.Flashing;
         if (shouldRun == _timer.Enabled)
         {
             return;
@@ -312,6 +415,10 @@ public sealed class HudApp : IDisposable
         _timer.Stop();
         _timer.Tick -= OnTimerTick;
         _timer.Dispose();
+
+        // 退出必须卸钩，否则钩子会跟着残留到进程死亡
+        _pageHook?.Dispose();
+        _pageHook = null;
 
         _suppressTimer.Stop();
         _suppressTimer.Tick -= OnSuppressTick;

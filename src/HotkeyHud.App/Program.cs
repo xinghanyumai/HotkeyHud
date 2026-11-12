@@ -60,6 +60,24 @@ internal static class Program
                 return ShellTest.Run();
             }
 
+            if (options.PagingTest)
+            {
+                return PagingTest.Run(
+                    options.Out ?? Path.Combine(Path.GetTempPath(), "hotkeyhud-paging"));
+            }
+
+            if (options.MakeIcon)
+            {
+                return IconMaker.Run(
+                    Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "app.ico"),
+                    options.Out);
+            }
+
+            if (options.HookProbe)
+            {
+                return HookProbe.Run();
+            }
+
             if (options.S6Test)
             {
                 return S6Test.Run(
@@ -162,7 +180,7 @@ internal static class Program
 
     private sealed record Options(
         bool SelfTest, bool TypingTest, bool IntegrationTest, bool RenderGallery,
-        bool SuppressionTest, bool ShellTest, bool S6Test, bool ProbeSingleInstance,
+        bool SuppressionTest, bool ShellTest, bool S6Test, bool HookProbe, bool MakeIcon, bool PagingTest, bool ProbeSingleInstance,
         bool Demo, int Seconds, string? Capture, string? Out);
 
     private static Options ParseOptions(string[] args)
@@ -174,6 +192,9 @@ internal static class Program
         bool suppressionTest = false;
         bool shellTest = false;
         bool s6Test = false;
+        bool hookProbe = false;
+        bool makeIcon = false;
+        bool pagingTest = false;
         bool probeSingleInstance = false;
         bool demo = false;
         int seconds = 30;
@@ -217,6 +238,21 @@ internal static class Program
                 case "--s6-test":
                     RequireDiagnosticsBuild(arg);
                     s6Test = true;
+                    break;
+
+                case "--paging-test":
+                    RequireDiagnosticsBuild(arg);
+                    pagingTest = true;
+                    break;
+
+                case "--make-icon":
+                    RequireDiagnosticsBuild(arg);
+                    makeIcon = true;
+                    break;
+
+                case "--hook-probe":
+                    RequireDiagnosticsBuild(arg);
+                    hookProbe = true;
                     break;
 
                 case "--probe-single-instance":
@@ -263,7 +299,7 @@ internal static class Program
                     {
                         throw new ArgumentException(
                             $"未知参数 \"{arg}\"。可用：--selftest --typing-test --integration-test "
-                            + "--render-gallery --suppression-test --shell-test --s6-test --demo "
+                            + "--render-gallery --suppression-test --shell-test --s6-test --hook-probe --make-icon --paging-test --demo "
                             + "--seconds=N --capture=PATH --out=DIR"
                             + "（注意值必须用 = 连接）");
                     }
@@ -273,7 +309,7 @@ internal static class Program
         }
 
         return new Options(selfTest, typingTest, integrationTest, renderGallery, suppressionTest,
-            shellTest, s6Test, probeSingleInstance, demo, seconds, capture, output);
+            shellTest, s6Test, hookProbe, makeIcon, pagingTest, probeSingleInstance, demo, seconds, capture, output);
     }
 
     /// <summary>只接受 <c>--name=value</c>；空格分隔形式一律落到「未知参数」分支报错。</summary>

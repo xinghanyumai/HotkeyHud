@@ -131,7 +131,7 @@ internal static class HudPanel
         }
         else
         {
-            height += Pack(blocks).Rows * RowHeight + FooterHeight;
+            height += Pack(blocks, model.CellBudget).Rows * RowHeight + FooterHeight;
         }
 
         return new Size(width, (int)Math.Ceiling(height * scale));
@@ -186,7 +186,7 @@ internal static class HudPanel
         }
 
         var placed = new List<PlacedItem>(MaxVisibleItems);
-        (List<Cell>[] columns, int rows) = Pack(blocks);
+        (List<Cell>[] columns, int rows) = Pack(blocks, model.CellBudget);
         DrawCells(graphics, columns, scale, padX, y, contentWidth, placed);
 
         DrawFooter(graphics, model, scale, padX, y + rows * RowHeight * scale, contentWidth);
@@ -213,19 +213,30 @@ internal static class HudPanel
     /// <summary>底部提示文案。抽成公开方法是为了让验收能断言文本本身，而不是只截图看。</summary>
     public static string FooterText(HudModel model)
     {
-        int hidden = Math.Max(0, model.TotalCount - MaxVisibleItems);
         string modifierName = model.Modifier == Modifier.None ? "修饰键" : model.Modifier.ToString();
         string tail = $"松开 {modifierName} 隐藏";
-        return hidden > 0 ? $"还有 {hidden} 个未显示 · {tail}" : tail;
+
+        return model.PageCount > 1
+            ? $"第 {model.PageIndex + 1}/{model.PageCount} 页 · ↑↓ 翻页 · {tail}"
+            : $"共 {model.TotalCount} 条 · {tail}";
     }
 
     /// <summary>键帽只显示非修饰键，并套用 §6.1 缩写表。</summary>
     public static string KeycapText(string keys)
     {
+        // HudBuilder 已经把触发修饰键去掉了；这里只缩写最后一个键名，
+        // 保留 Shift+/Alt+ 这类剩下的修饰键（Ctrl+Shift+K 在 Ctrl 面板显示 Shift+K）
         int index = keys.LastIndexOf('+');
-        string key = index >= 0 ? keys[(index + 1)..] : keys;
-        return KeyAbbreviations.TryGetValue(key, out string? shortName) ? shortName : key;
+        if (index < 0)
+        {
+            return Abbreviate(keys);
+        }
+
+        return keys[..(index + 1)] + Abbreviate(keys[(index + 1)..]);
     }
+
+    private static string Abbreviate(string key)
+        => KeyAbbreviations.TryGetValue(key, out string? shortName) ? shortName : key;
 
     /// <summary>
     /// 每一列最顶上的那个元素是什么：组名，或 null（单组模型不显示组名）。
@@ -467,7 +478,7 @@ internal static class HudPanel
     /// 组块按「当前最短列优先」装填（§6.1 v1.3）。装不下就拆，续块带「组名（续）」
     /// 且紧跟其后——这样不会出现无组名的续列，也不会出现两列半空。
     /// </summary>
-    private static (List<Cell>[] Columns, int Rows) Pack(List<Block> blocks)
+    private static (List<Cell>[] Columns, int Rows) Pack(List<Block> blocks, int cellBudget = 0)
     {
         int total = 0;
         foreach (Block block in blocks)
@@ -475,13 +486,15 @@ internal static class HudPanel
             total += block.Height;
         }
 
-        int capacity = RowsOf(total);
+        // 多页时面板高度必须固定，否则翻页会重建 DIB 并闪一下（§6.1）
+        int capacity = Math.Max(RowsOf(total), RowsOf(cellBudget));
         while (true)
         {
             (List<Cell>[] Columns, int Rows)? packed = TryPack(blocks, capacity);
             if (packed is not null)
             {
-                return packed.Value;
+                // 多页时按预算留白：内容少也要占满预算行数，否则翻页会改变窗口高度
+                return (packed.Value.Columns, Math.Max(packed.Value.Rows, capacity));
             }
 
             capacity++;

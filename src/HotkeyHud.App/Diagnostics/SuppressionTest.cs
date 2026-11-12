@@ -206,7 +206,7 @@ internal static class SuppressionTest
         ReleaseAll();
         FocusWindow(target);
         KeyDown(VkControl);
-        bool everVisible = PumpTracking(450, hud);
+        bool everVisible = PumpTracking(600, hud);
 
         if (capturePath is not null && hud.IsOverlayVisible)
         {

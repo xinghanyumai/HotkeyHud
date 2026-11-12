@@ -1,36 +1,146 @@
 namespace HotkeyHud.Core;
 
-/// <summary>§3.2 查询 + §4.3 列表过滤 + 分组。UI 拿到结果后不再加工。</summary>
+/// <summary>
+/// 把「应用档案 + 系统档案」变成某一页的 <see cref="HudModel"/>。
+/// <para>
+/// §3.2 v1.5：匹配规则是**包含**该修饰键，不再是完全相等——Ctrl 面板要能看到
+/// <c>Ctrl+Shift+K</c>、<c>Ctrl+Space</c>。排序按修饰键数量升序（<c>Ctrl+S</c> 在
+/// <c>Ctrl+Shift+S</c> 之前），同数量保持档案里的原顺序。
+/// </para>
+/// </summary>
 public static class HudBuilder
 {
     public const string DefaultGroupTitle = "常规";
+
+    /// <summary>每页条目上限（§6.1）。</summary>
+    public const int PageSize = 12;
 
     public static HudModel Build(
         AppShortcutProfile? profile,
         Modifier modifier,
         KnownShortcutFilter filter,
         string fallbackAppName = "")
+        => Build(profile, systemProfile: null, modifier, filter, fallbackAppName, pageIndex: 0);
+
+    public static HudModel Build(
+        AppShortcutProfile? profile,
+        AppShortcutProfile? systemProfile,
+        Modifier modifier,
+        KnownShortcutFilter filter,
+        string fallbackAppName = "",
+        int pageIndex = 0)
     {
         ArgumentNullException.ThrowIfNull(filter);
 
-        if (profile is null)
+        List<Match> matches = Collect(profile, systemProfile, modifier, filter, out int hidden);
+
+        int total = matches.Count;
+        int pageCount = total == 0 ? 1 : (total + PageSize - 1) / PageSize;
+        int page = Math.Clamp(pageIndex, 0, pageCount - 1);
+
+        if (total == 0)
         {
             // 未收录应用：返回空模型，绝不混入其他应用条目（§3.2 空结果规则）
             return new HudModel
             {
-                AppName = fallbackAppName,
+                AppName = ResolveAppName(profile, fallbackAppName),
                 Modifier = modifier,
                 Groups = Array.Empty<HudGroup>(),
                 TotalCount = 0,
-                HiddenByKnownCount = 0,
-                HasProfile = false,
+                HiddenByKnownCount = hidden,
+                HasProfile = profile is not null,
+                PageIndex = 0,
+                PageCount = 1,
+                CellBudget = 0,
             };
         }
 
+        List<Match> slice = matches.Skip(page * PageSize).Take(PageSize).ToList();
+
         var groupOrder = new List<string>();
         var groupItems = new Dictionary<string, List<HudItem>>(StringComparer.Ordinal);
-        int hidden = 0;
-        int total = 0;
+        foreach (Match match in slice)
+        {
+            string title = string.IsNullOrWhiteSpace(match.Entry.Group)
+                ? DefaultGroupTitle
+                : match.Entry.Group!.Trim();
+
+            if (!groupItems.TryGetValue(title, out List<HudItem>? items))
+            {
+                items = new List<HudItem>();
+                groupItems[title] = items;
+                groupOrder.Add(title);
+            }
+
+            // 键帽只显示「去掉触发修饰键之后」的部分：Ctrl+Shift+K 在 Ctrl 面板显示 Shift+K
+            Combo display = match.Entry.Combo with
+            {
+                Modifiers = match.Entry.Combo.Modifiers & ~modifier,
+            };
+
+            items.Add(new HudItem { Keys = Keys.Format(display), Action = match.Entry.Action });
+        }
+
+        var groups = new HudGroup[groupOrder.Count];
+        for (int i = 0; i < groupOrder.Count; i++)
+        {
+            groups[i] = new HudGroup { Title = groupOrder[i], Items = groupItems[groupOrder[i]].ToArray() };
+        }
+
+        return new HudModel
+        {
+            AppName = ResolveAppName(profile, fallbackAppName),
+            Modifier = modifier,
+            Groups = groups,
+            TotalCount = total,
+            HiddenByKnownCount = hidden,
+            HasProfile = profile is not null,
+            PageIndex = page,
+            PageCount = pageCount,
+            CellBudget = pageCount > 1 ? ComputeCellBudget(matches) : 0,
+        };
+    }
+
+    /// <summary>总页数。UI 判断要不要装翻页钩子时用它，不必先构建整页模型。</summary>
+    public static int CountPages(
+        AppShortcutProfile? profile,
+        AppShortcutProfile? systemProfile,
+        Modifier modifier,
+        KnownShortcutFilter filter)
+    {
+        List<Match> matches = Collect(profile, systemProfile, modifier, filter, out _);
+        return matches.Count == 0 ? 1 : (matches.Count + PageSize - 1) / PageSize;
+    }
+
+    private static List<Match> Collect(
+        AppShortcutProfile? profile,
+        AppShortcutProfile? systemProfile,
+        Modifier modifier,
+        KnownShortcutFilter filter,
+        out int hidden)
+    {
+        hidden = 0;
+        var matches = new List<Match>();
+
+        // 应用条目在前，系统条目在后（§2.5）
+        Append(matches, profile, modifier, filter, ref hidden);
+        Append(matches, systemProfile, modifier, filter, ref hidden);
+
+        // 修饰键数量少的在前；OrderBy 是稳定排序，同数量保持原顺序
+        return matches.OrderBy(match => match.ModifierCount).ToList();
+    }
+
+    private static void Append(
+        List<Match> matches,
+        AppShortcutProfile? profile,
+        Modifier modifier,
+        KnownShortcutFilter filter,
+        ref int hidden)
+    {
+        if (profile is null)
+        {
+            return;
+        }
 
         foreach (ShortcutEntry entry in profile.Shortcuts)
         {
@@ -39,9 +149,10 @@ public static class HudBuilder
                 continue; // keys 解析失败的条目在加载时已丢弃并计数
             }
 
-            if (entry.Combo.Modifiers != modifier)
+            // v1.5：包含该修饰键即可，不再要求完全相等
+            if ((entry.Combo.Modifiers & modifier) != modifier || entry.Combo.VirtualKey == 0)
             {
-                continue; // 精确匹配：Ctrl+Shift+K 不得出现在 Ctrl 面板
+                continue;
             }
 
             if (filter.IsKnown(entry.Combo))
@@ -50,39 +161,65 @@ public static class HudBuilder
                 continue;
             }
 
-            string title = string.IsNullOrWhiteSpace(entry.Group)
-                ? DefaultGroupTitle
-                : entry.Group!.Trim();
-            if (!groupItems.TryGetValue(title, out List<HudItem>? items))
+            matches.Add(new Match(entry, CountModifiers(entry.Combo.Modifiers)));
+        }
+    }
+
+    private static int CountModifiers(Modifier modifiers)
+    {
+        int count = 0;
+        if ((modifiers & Modifier.Ctrl) != 0)
+        {
+            count++;
+        }
+
+        if ((modifiers & Modifier.Alt) != 0)
+        {
+            count++;
+        }
+
+        if ((modifiers & Modifier.Shift) != 0)
+        {
+            count++;
+        }
+
+        if ((modifiers & Modifier.Win) != 0)
+        {
+            count++;
+        }
+
+        return count;
+    }
+
+    /// <summary>
+    /// 多页时的格数预算 = 12 条 + 各页里最多的组名数。
+    /// 取各页最大值而不是本页值，才能保证翻页时面板高度不变。
+    /// </summary>
+    private static int ComputeCellBudget(List<Match> matches)
+    {
+        int maxGroups = 1;
+        int pageCount = (matches.Count + PageSize - 1) / PageSize;
+
+        for (int page = 0; page < pageCount; page++)
+        {
+            var titles = new HashSet<string>(StringComparer.Ordinal);
+            foreach (Match match in matches.Skip(page * PageSize).Take(PageSize))
             {
-                items = new List<HudItem>();
-                groupItems[title] = items;
-                groupOrder.Add(title);
+                titles.Add(string.IsNullOrWhiteSpace(match.Entry.Group)
+                    ? DefaultGroupTitle
+                    : match.Entry.Group!.Trim());
             }
 
-            // 用规范格式而不是原始文本，避免 "ctrl+k" 这类写法原样上屏
-            items.Add(new HudItem { Keys = Keys.Format(entry.Combo), Action = entry.Action });
-            total++;
+            maxGroups = Math.Max(maxGroups, titles.Count);
         }
 
-        var groups = new HudGroup[groupOrder.Count];
-        for (int i = 0; i < groupOrder.Count; i++)
-        {
-            string title = groupOrder[i];
-            // 转数组：UI 拿到的必须是只读的，不能向下转型改内容（§6 边界约定）
-            groups[i] = new HudGroup { Title = title, Items = groupItems[title].ToArray() };
-        }
-
-        return new HudModel
-        {
-            AppName = string.IsNullOrWhiteSpace(profile.DisplayName)
-                ? fallbackAppName
-                : profile.DisplayName,
-            Modifier = modifier,
-            Groups = groups,
-            TotalCount = total,
-            HiddenByKnownCount = hidden,
-            HasProfile = true,
-        };
+        return PageSize + maxGroups;
     }
+
+    private static string ResolveAppName(AppShortcutProfile? profile, string fallbackAppName)
+        => profile is null || string.IsNullOrWhiteSpace(profile.DisplayName)
+            ? fallbackAppName
+            : profile.DisplayName;
+
+    private readonly record struct Match(ShortcutEntry Entry, int ModifierCount);
 }

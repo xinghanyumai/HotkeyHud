@@ -36,6 +36,19 @@ public static class Keys
     public const int VkLWin = 0x5B;
     public const int VkRWin = 0x5C;
 
+    /// <summary>
+    /// 鼠标滚轮的伪键。Windows 的滚轮不产生 VK，档案里用 <c>Ctrl+WheelUp</c> 这种写法表达，
+    /// 解析后映射到这两个值；真实输入通路永远不会送来它们（纯展示用）。
+    /// </summary>
+    public const int VkWheelUp = 0x1F00;
+
+    public const int VkWheelDown = 0x1F01;
+
+    /// <summary>翻页键。面板可见时这两个键只翻页，不当作组合键。</summary>
+    public const int VkUp = 0x26;
+
+    public const int VkDown = 0x28;
+
     /// <summary>VK → 修饰键。左右 Ctrl/Alt/Shift 归一到同一个修饰键（坑 #4）。</summary>
     public static Modifier ModifierOf(int virtualKey) => virtualKey switch
     {
@@ -141,6 +154,16 @@ public static class Keys
             }
         }
 
+        if (virtualKey == VkWheelUp)
+        {
+            return "滚轮↑";
+        }
+
+        if (virtualKey == VkWheelDown)
+        {
+            return "滚轮↓";
+        }
+
         foreach ((string name, int vk) in NamedKeys)
         {
             if (vk == virtualKey)
@@ -211,6 +234,12 @@ public static class Keys
             return true;
         }
 
+        if (WheelAliases.TryGetValue(text, out int wheel))
+        {
+            virtualKey = wheel;
+            return true;
+        }
+
         foreach ((string name, int vk) in NamedKeys)
         {
             if (string.Equals(name, text, StringComparison.OrdinalIgnoreCase))
@@ -222,6 +251,14 @@ public static class Keys
 
         return false;
     }
+
+    private static readonly Dictionary<string, int> WheelAliases = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["WheelUp"] = VkWheelUp,
+        ["滚轮↑"] = VkWheelUp,
+        ["WheelDown"] = VkWheelDown,
+        ["滚轮↓"] = VkWheelDown,
+    };
 
     // 与 US 布局对齐；本项目不处理非 US 布局的 OEM 键差异
     private static readonly (char Character, int VirtualKey)[] PunctuationKeys =

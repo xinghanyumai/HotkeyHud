@@ -26,7 +26,7 @@ public sealed class TrayIcon : IDisposable
         Action<bool> setAutoStart,
         Action exit)
     {
-        _icon = CreateIcon();
+        _icon = LoadAppIcon() ?? CreateIcon();
 
         _statusItem = new ToolStripMenuItem("正常") { Enabled = false };
         _pauseItem = new ToolStripMenuItem("暂停", null, (_, _) => togglePause());
@@ -92,6 +92,20 @@ public sealed class TrayIcon : IDisposable
         _notifyIcon.BalloonTipText = text;
         _notifyIcon.BalloonTipIcon = warning ? ToolTipIcon.Warning : ToolTipIcon.Info;
         _notifyIcon.ShowBalloonTip(4000);
+    }
+
+    /// <summary>优先用打包的 app.ico（六档、与 exe 图标一致），取不到再退回代码绘制。</summary>
+    private static Icon? LoadAppIcon()
+    {
+        try
+        {
+            string path = Path.Combine(AppContext.BaseDirectory, "app.ico");
+            return File.Exists(path) ? new Icon(path, 16, 16) : null;
+        }
+        catch (Exception)
+        {
+            return null;
+        }
     }
 
     private static Icon CreateIcon()

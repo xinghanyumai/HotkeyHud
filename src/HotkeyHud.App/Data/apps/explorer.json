@@ -1,15 +1,94 @@
 {
   "app": "explorer",
   "displayName": "文件资源管理器",
-  "processNames": ["explorer.exe"],
+  "processNames": [
+    "explorer.exe"
+  ],
   "shortcuts": [
-    { "keys": "Ctrl+N", "action": "打开新窗口", "group": "窗口" },
-    { "keys": "Ctrl+W", "action": "关闭标签页", "group": "窗口" },
-    { "keys": "Ctrl+T", "action": "打开新标签页", "group": "窗口" },
-    { "keys": "Ctrl+Tab", "action": "下一个标签页", "group": "窗口" },
-    { "keys": "Ctrl+L", "action": "聚焦地址栏", "group": "导航" },
-    { "keys": "Ctrl+E", "action": "选中搜索框", "group": "导航" },
-    { "keys": "Ctrl+F", "action": "选中搜索框", "group": "导航" },
-    { "keys": "Ctrl+D", "action": "删除到回收站", "group": "文件" }
+    {
+      "keys": "Ctrl+N",
+      "action": "打开新窗口",
+      "group": "窗口"
+    },
+    {
+      "keys": "Ctrl+W",
+      "action": "关闭标签页",
+      "group": "窗口"
+    },
+    {
+      "keys": "Ctrl+T",
+      "action": "打开新标签页",
+      "group": "窗口"
+    },
+    {
+      "keys": "Ctrl+Tab",
+      "action": "下一个标签页",
+      "group": "窗口"
+    },
+    {
+      "keys": "Ctrl+L",
+      "action": "聚焦地址栏",
+      "group": "导航"
+    },
+    {
+      "keys": "Ctrl+E",
+      "action": "选中搜索框",
+      "group": "导航"
+    },
+    {
+      "keys": "Ctrl+F",
+      "action": "选中搜索框",
+      "group": "导航"
+    },
+    {
+      "keys": "Ctrl+Shift+N",
+      "action": "新建文件夹",
+      "group": "文件"
+    },
+    {
+      "keys": "Ctrl+Shift+E",
+      "action": "展开导航树",
+      "group": "导航"
+    },
+    {
+      "keys": "Ctrl+D",
+      "action": "删除到回收站",
+      "group": "文件"
+    },
+    {
+      "keys": "Ctrl+WheelUp",
+      "action": "放大图标",
+      "group": "视图"
+    },
+    {
+      "keys": "Ctrl+WheelDown",
+      "action": "缩小图标",
+      "group": "视图"
+    },
+    {
+      "keys": "Ctrl+A",
+      "action": "全选",
+      "group": "文件"
+    },
+    {
+      "keys": "Ctrl+C",
+      "action": "复制",
+      "group": "文件"
+    },
+    {
+      "keys": "Ctrl+V",
+      "action": "粘贴",
+      "group": "文件"
+    },
+    {
+      "keys": "Ctrl+X",
+      "action": "剪切",
+      "group": "文件"
+    },
+    {
+      "keys": "Ctrl+Z",
+      "action": "撤销",
+      "group": "文件"
+    }
   ]
 }

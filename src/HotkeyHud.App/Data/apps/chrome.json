@@ -1,22 +1,114 @@
 {
   "app": "chrome",
   "displayName": "Chrome",
-  "processNames": ["chrome.exe"],
+  "processNames": [
+    "chrome.exe"
+  ],
   "shortcuts": [
-    { "keys": "Ctrl+T", "action": "打开新标签页", "group": "标签页" },
-    { "keys": "Ctrl+N", "action": "打开新窗口", "group": "标签页" },
-    { "keys": "Ctrl+W", "action": "关闭标签页", "group": "标签页" },
-    { "keys": "Ctrl+Tab", "action": "下一个标签页", "group": "标签页" },
-    { "keys": "Ctrl+9", "action": "跳到最右标签", "group": "标签页" },
-    { "keys": "Ctrl+L", "action": "跳到地址栏", "group": "地址栏" },
-    { "keys": "Ctrl+K", "action": "随处搜索", "group": "地址栏" },
-    { "keys": "Ctrl+H", "action": "打开历史记录", "group": "功能" },
-    { "keys": "Ctrl+J", "action": "打开下载内容", "group": "功能" },
-    { "keys": "Ctrl+G", "action": "查找下一个", "group": "功能" },
-    { "keys": "Ctrl+R", "action": "重新加载页面", "group": "网页" },
-    { "keys": "Ctrl+U", "action": "查看源代码", "group": "网页" },
-    { "keys": "Ctrl+D", "action": "收藏当前网页", "group": "网页" },
-    { "keys": "Ctrl+0", "action": "恢复默认缩放", "group": "网页" },
-    { "keys": "Ctrl+Backspace", "action": "删除前一个词", "group": "网页" }
+    {
+      "keys": "Ctrl+T",
+      "action": "打开新标签页",
+      "group": "标签页"
+    },
+    {
+      "keys": "Ctrl+N",
+      "action": "打开新窗口",
+      "group": "标签页"
+    },
+    {
+      "keys": "Ctrl+Shift+N",
+      "action": "无痕窗口",
+      "group": "标签页"
+    },
+    {
+      "keys": "Ctrl+W",
+      "action": "关闭标签页",
+      "group": "标签页"
+    },
+    {
+      "keys": "Ctrl+Shift+T",
+      "action": "恢复关闭的标签页",
+      "group": "标签页"
+    },
+    {
+      "keys": "Ctrl+Tab",
+      "action": "下一个标签页",
+      "group": "标签页"
+    },
+    {
+      "keys": "Ctrl+9",
+      "action": "跳到最右标签",
+      "group": "标签页"
+    },
+    {
+      "keys": "Ctrl+1",
+      "action": "跳到第 1 个标签",
+      "group": "标签页"
+    },
+    {
+      "keys": "Ctrl+L",
+      "action": "跳到地址栏",
+      "group": "地址栏"
+    },
+    {
+      "keys": "Ctrl+K",
+      "action": "随处搜索",
+      "group": "地址栏"
+    },
+    {
+      "keys": "Ctrl+H",
+      "action": "打开历史记录",
+      "group": "功能"
+    },
+    {
+      "keys": "Ctrl+J",
+      "action": "打开下载内容",
+      "group": "功能"
+    },
+    {
+      "keys": "Ctrl+G",
+      "action": "查找下一个",
+      "group": "功能"
+    },
+    {
+      "keys": "Ctrl+Shift+B",
+      "action": "显示书签栏",
+      "group": "功能"
+    },
+    {
+      "keys": "Ctrl+R",
+      "action": "重新加载页面",
+      "group": "网页"
+    },
+    {
+      "keys": "Ctrl+U",
+      "action": "查看源代码",
+      "group": "网页"
+    },
+    {
+      "keys": "Ctrl+D",
+      "action": "收藏当前网页",
+      "group": "网页"
+    },
+    {
+      "keys": "Ctrl+0",
+      "action": "恢复默认缩放",
+      "group": "网页"
+    },
+    {
+      "keys": "Ctrl+Backspace",
+      "action": "删除前一个词",
+      "group": "网页"
+    },
+    {
+      "keys": "Ctrl+Shift+W",
+      "action": "关闭窗口",
+      "group": "标签页"
+    },
+    {
+      "keys": "Ctrl+F",
+      "action": "页内查找",
+      "group": "网页"
+    }
   ]
 }

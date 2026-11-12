@@ -20,20 +20,26 @@ public sealed class TriggerStateMachine
     /// <summary>§5.3.2 规定的阈值下界：低于 200ms 正常打字会闪，80ms 是硬下限。</summary>
     public const int MinTimingMs = 80;
 
+    /// <summary>
+    /// 默认长按阈值。v1.5 由 300 提到 450：300ms 与部分人的按键节奏重叠，
+    /// 按快捷键时面板会闪一下再消失。
+    /// </summary>
+    public const int DefaultDwellMs = 450;
+
     /// <summary>阈值上界：高于 400ms 查询意图会落空，5000ms 是硬上限。</summary>
     public const int MaxTimingMs = 5000;
 
     private readonly HashSet<int> _heldNonModifierKeys = new();
 
     private Modifier _heldModifiers;
-    private int _dwellMs = 300;
+    private int _dwellMs = DefaultDwellMs;
     private int _flashMs = 500;
     private long _armedAtMs;
     private long _flashStartedMs;
     private bool _blockedUntilRelease;
     private bool _suppressed;
 
-    public TriggerStateMachine(int dwellMs = 300, int flashMs = 500)
+    public TriggerStateMachine(int dwellMs = DefaultDwellMs, int flashMs = 500)
     {
         DwellMs = dwellMs;
         FlashMs = flashMs;
@@ -86,6 +92,27 @@ public sealed class TriggerStateMachine
     public event Action? HideRequested;
 
     public event Action<Combo>? ComboFlashed;
+
+    /// <summary>
+    /// 请求翻页，参数为 +1（下一页）/ -1（上一页）。只在面板可见时有效。
+    /// <para>
+    /// 翻页不改变状态，仍是 Visible。边界由 UI 侧夹住，状态机不做循环。
+    /// </para>
+    /// </summary>
+    public event Action<int>? PageRequested;
+
+    /// <summary>
+    /// 外部请求翻页（钩子吞掉 ↑/↓ 后由 UI 调用）。
+    /// 之所以还要走状态机，是为了让「Raw Input 通路」与「钩子通路」共用同一个出口，
+    /// 不会两条路各翻一次。
+    /// </summary>
+    public void RequestPage(int delta)
+    {
+        if (State is HudState.Visible or HudState.Flashing)
+        {
+            PageRequested?.Invoke(delta);
+        }
+    }
 
     public void OnKey(in KeyEvent e)
     {
@@ -242,6 +269,13 @@ public sealed class TriggerStateMachine
 
             case HudState.Visible:
             case HudState.Flashing:
+                // 翻页键不当作组合键：面板可见时 ↑/↓ 只翻页，不闪烁也不收起
+                if (virtualKey == Keys.VkUp || virtualKey == Keys.VkDown)
+                {
+                    PageRequested?.Invoke(virtualKey == Keys.VkDown ? 1 : -1);
+                    return;
+                }
+
                 var combo = new Combo(_heldModifiers, virtualKey);
                 if (ShouldFlash(combo))
                 {

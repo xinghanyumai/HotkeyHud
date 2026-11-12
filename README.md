@@ -95,10 +95,17 @@ dotnet run --project src/HotkeyHud.App -- --shell-test
 # ⑥ S6 打磨验收：混合 DPI 逻辑 / 上缘翻转 / 淡入 / 立即隐藏
 dotnet run --project src/HotkeyHud.App -- --s6-test --out=<目录>
 
-# ⑦ S1 回归门禁：覆盖窗四条硬指标 + Raw Input 通路 + 内存三口径
+# ⑦ S7 分页验收：页脚 / 翻页 / 边界 / 钩子装卸 / 15 秒安全阀
+dotnet run --project src/HotkeyHud.App -- --paging-test --out=<目录>
+
+# 附：钩子前提实验（吞掉后 Raw Input 是否仍收到）与图标生成
+dotnet run --project src/HotkeyHud.App -- --hook-probe
+dotnet run --project src/HotkeyHud.App -- --make-icon --out=<目录>
+
+# ⑧ S1 回归门禁：覆盖窗四条硬指标 + Raw Input 通路 + 内存三口径
 dotnet run --project src/HotkeyHud.App -- --selftest
 
-# ⑧ 进程内输入通路冒烟（跨进程真实键盘打字待人工复核，见「偏差」）
+# ⑨ 进程内输入通路冒烟（跨进程真实键盘打字待人工复核，见「偏差」）
 dotnet run --project src/HotkeyHud.App -- --typing-test --seconds=60
 ```
 
@@ -108,6 +115,21 @@ dotnet run --project src/HotkeyHud.App -- --typing-test --seconds=60
 
 **`--integration-test` / `--suppression-test` / `--shell-test` 会抢前台**：它们自己创建窗口并 `SetForegroundWindow`，
 运行期间不要操作电脑，否则用例会以「无法把目标窗口切到前台」失败。
+
+### 一条明确的「不干扰」例外
+
+S1 立下的规矩是「不监听、不拦截、不抢焦点」。S7 起有**一处刻意违反**：
+
+> **多页面板可见期间**，装 `WH_KEYBOARD_LL` 吞掉 `↑` `↓`，让它们翻页而不是传给前台应用。
+
+范围被压到最小：只在 `PageCount > 1` 且面板可见时装；单页完全不装；收起 / 15 秒超时 / 进程退出
+都会立刻卸钩。钩子回调里只做一次整数比较与一次 `PostMessage`，不做 I/O、不渲染。
+
+**为什么必须有这个例外**：不吞的话，Ctrl+↓ 会一边翻页一边把前台文档的光标往下移。
+
+**为什么钩子只吞不翻页**：实测（`--hook-probe`）证明**被 `WH_KEYBOARD_LL` 吞掉的键，Raw Input 收不到**。
+所以翻页命令由钩子自己 `PostMessage` 投递，UI 收到后调 `TriggerStateMachine.RequestPage`——
+两条通路（Raw Input / 钩子）共用同一个出口，不会各翻一次。
 
 ### 时钟唯一来源
 
@@ -247,6 +269,8 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 | 面板全量重绘 p95 | < 25 ms | 9.13 ms（32 次采样） |
 | 面板高亮切换 p95 | < 8 ms | 1.06 ms（40 次采样） |
 | 12 条面板高度 | ≤ `min(320, 屏高×30%)` | 248 逻辑 px（上限 298），列高 6/6/5 |
+| 每页条目 | 12 | 12（多页时面板高度按格数预算固定，翻页不重建 DIB） |
+| 翻页键吞噬 | 仅多页 + 仅可见 + 仅 ↑↓ | 见 `--paging-test` P4/P5：单页不装、多页装且收起即卸 |
 | 淡入帧数 | 120ms / 16ms ≈ 8 帧 | 7 帧（ease-out）；关闭系统动画后 1 帧 |
 | 单次抑制采集 p95 | < 5 ms | 0.42 ms（含 OpenProcess，100 次） |
 | 按键到首帧 | ≤ 120 ms | 未打点（含 dwell 300ms + 首帧渲染） |
@@ -368,5 +392,6 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 | S3.5 布局修正 | 通过（键帽省略修饰键 / 组块不可跨列 / 底色不透明） |
 | S4 游戏抑制接入 | 通过（含 2 项整改） |
 | S5 托盘 / 配置 / 自启 | 通过（含 2 项整改） |
-| S6 打磨（混合 DPI / 上缘翻转 / 淡入） | 完成（S6 6/6；副屏截图未验证） |
+| S6 打磨（混合 DPI / 上缘翻转 / 淡入） | 通过（含 2 项整改） |
+| S7 覆盖度 + 分页 | 完成（单元 17/17，分页 6/6，钩子前提实验结论 B） |
 | 发布准备（签名 / 安装包 / 用户 README） | 未开始 |

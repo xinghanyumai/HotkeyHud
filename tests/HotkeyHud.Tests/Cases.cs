@@ -29,13 +29,14 @@ internal static class Cases
         Program.Run("Case14 普通窗口不抑制", Case14_NormalWindowNotSuppressed);
         Program.Run("Case15 前台窗口切换立即收起", Case15_ForegroundChangedHides);
         Program.Run("Case16 前台切换后修饰键状态被清空", Case16_ForegroundChangeClearsModifiers);
+        Program.Run("Case17 默认长按阈值为 450ms", Case17_DefaultDwellIs450);
     }
 
     // ---------------- §5 状态机 ----------------
 
     private static void Case01_DwellJustBelowThreshold()
     {
-        var sm = new TriggerStateMachine();
+        var sm = new TriggerStateMachine(dwellMs: 300);
         int shows = 0;
         sm.ShowRequested += _ => shows++;
 
@@ -58,7 +59,7 @@ internal static class Cases
 
     private static void Case02_DwellAtThresholdShows()
     {
-        var sm = new TriggerStateMachine();
+        var sm = new TriggerStateMachine(dwellMs: 300);
         var shown = new List<Modifier>();
         sm.ShowRequested += m => shown.Add(m);
 
@@ -77,7 +78,7 @@ internal static class Cases
 
     private static void Case03_ShortPressNeverShows()
     {
-        var sm = new TriggerStateMachine();
+        var sm = new TriggerStateMachine(dwellMs: 300);
         int shows = 0;
         int hides = 0;
         sm.ShowRequested += _ => shows++;
@@ -95,7 +96,7 @@ internal static class Cases
 
     private static void Case04_ComboPressCancelsArm()
     {
-        var sm = new TriggerStateMachine();
+        var sm = new TriggerStateMachine(dwellMs: 300);
         int shows = 0;
         sm.ShowRequested += _ => shows++;
 
@@ -110,7 +111,7 @@ internal static class Cases
 
     private static void Case05_CanRearmAfterCancel()
     {
-        var sm = new TriggerStateMachine();
+        var sm = new TriggerStateMachine(dwellMs: 300);
         int shows = 0;
         sm.ShowRequested += _ => shows++;
 
@@ -144,7 +145,7 @@ internal static class Cases
     private static void Case06_KnownComboHidesImmediately()
     {
         var filter = new KnownShortcutFilter();
-        var sm = new TriggerStateMachine { FlashPredicate = combo => !filter.IsKnown(combo) };
+        var sm = new TriggerStateMachine(dwellMs: 300) { FlashPredicate = combo => !filter.IsKnown(combo) };
         int hides = 0;
         int flashes = 0;
         sm.HideRequested += () => hides++;
@@ -164,7 +165,7 @@ internal static class Cases
     private static void Case07_UnknownComboFlashes()
     {
         var filter = new KnownShortcutFilter();
-        var sm = new TriggerStateMachine { FlashPredicate = combo => !filter.IsKnown(combo) };
+        var sm = new TriggerStateMachine(dwellMs: 300) { FlashPredicate = combo => !filter.IsKnown(combo) };
         int hides = 0;
         Combo? flashed = null;
         sm.HideRequested += () => hides++;
@@ -200,7 +201,7 @@ internal static class Cases
         Check.Equal(1, model.TotalCount, "可见条目数应为 1");
         Check.Equal(2, model.HiddenByKnownCount, "被熟记名单剔除的应为 2");
         Check.Equal(1, items.Count, "列表里只应剩一条");
-        Check.Equal("Ctrl+K", items[0].Keys, "剩下的应是 Ctrl+K");
+        Check.Equal("K", items[0].Keys, "键帽只显示非修饰键：剩下的应是 K");
     }
 
     private static void Case09_OnlyForegroundAppEntries()
@@ -278,8 +279,12 @@ internal static class Cases
         var model = HudBuilder.Build(profile, Modifier.Ctrl, new KnownShortcutFilter(Array.Empty<string>()));
         var items = model.Groups.SelectMany(g => g.Items).ToList();
 
-        Check.Equal(1, model.TotalCount, "Ctrl 面板只应有 1 条");
-        Check.Equal("Ctrl+K", items[0].Keys, "双修饰键条目必须被排除");
+        // v1.5：匹配规则改为「包含」——双修饰键条目要出现在 Ctrl 面板里
+        Check.Equal(3, items.Count, "Ctrl 面板应包含全部含 Ctrl 的组合");
+        Check.True(items.Any(i => i.Keys == "Shift+="), "应出现 Shift+=（键帽不带重复的 Ctrl）");
+        Check.True(items.Any(i => i.Keys == "Alt+M"), "应出现 Alt+M");
+        Check.True(items.All(i => !i.Keys.StartsWith("Ctrl", StringComparison.Ordinal)),
+            "键帽不得再带 Ctrl 前缀");
     }
 
     // ---------------- §2 游戏判定 ----------------
@@ -349,7 +354,7 @@ internal static class Cases
 
     private static void Case15_ForegroundChangedHides()
     {
-        var sm = new TriggerStateMachine();
+        var sm = new TriggerStateMachine(dwellMs: 300);
         int hides = 0;
         sm.HideRequested += () => hides++;
 
@@ -363,7 +368,7 @@ internal static class Cases
         Check.Equal(HudState.Idle, sm.State, "应回到 Idle");
 
         // S2 整改第 2 项：前台切换会清空非修饰键，漏掉一次 key-up 不该造成永久阻塞
-        var blocked = new TriggerStateMachine();
+        var blocked = new TriggerStateMachine(dwellMs: 300);
         int shows = 0;
         blocked.ShowRequested += _ => shows++;
 
@@ -379,7 +384,7 @@ internal static class Cases
 
     private static void Case16_ForegroundChangeClearsModifiers()
     {
-        var sm = new TriggerStateMachine();
+        var sm = new TriggerStateMachine(dwellMs: 300);
         int shows = 0;
         sm.ShowRequested += _ => shows++;
 
@@ -400,6 +405,23 @@ internal static class Cases
 
         Check.Equal(1, shows, "修饰键状态被清空后，重新长按应能弹出");
         Check.Equal(HudState.Visible, sm.State, "应进入 Visible");
+    }
+
+    private static void Case17_DefaultDwellIs450()
+    {
+        var sm = new TriggerStateMachine();
+        Check.Equal(TriggerStateMachine.DefaultDwellMs, sm.DwellMs, "默认阈值应取自常量");
+        Check.Equal(450, sm.DwellMs, "默认长按阈值应为 450ms（v1.5 由 300 上调）");
+
+        int shows = 0;
+        sm.ShowRequested += _ => shows++;
+
+        sm.OnKey(new KeyEvent(Keys.VkControl, true, 0));
+        sm.OnTick(449);
+        Check.Equal(0, shows, "449ms 时不应显示");
+
+        sm.OnTick(450);
+        Check.Equal(1, shows, "450ms 时应显示");
     }
 
     // ---------------- 辅助 ----------------
