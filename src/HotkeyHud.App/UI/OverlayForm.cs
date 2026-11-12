@@ -81,9 +81,11 @@ public sealed class OverlayForm : Form
             NativeMethods.ReleaseDC(IntPtr.Zero, screenDc);
         }
 
+        // 几何只由 UpdateLayeredWindow 决定；这里只负责置顶与显示，不改位置和尺寸
         NativeMethods.SetWindowPos(
-            Handle, NativeMethods.HWND_TOPMOST, bounds.X, bounds.Y, bounds.Width, bounds.Height,
-            NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW);
+            Handle, NativeMethods.HWND_TOPMOST, 0, 0, 0, 0,
+            NativeMethods.SWP_NOMOVE | NativeMethods.SWP_NOSIZE
+            | NativeMethods.SWP_NOACTIVATE | NativeMethods.SWP_SHOWWINDOW);
         NativeMethods.ShowWindow(Handle, NativeMethods.SW_SHOWNOACTIVATE);
     }
 
@@ -224,12 +226,21 @@ public sealed class OverlayForm : Form
         };
 
         _memDc = NativeMethods.CreateCompatibleDC(IntPtr.Zero);
+        if (_memDc == IntPtr.Zero)
+        {
+            throw new InvalidOperationException(
+                $"CreateCompatibleDC 失败，Win32 错误码 {Marshal.GetLastWin32Error()}");
+        }
+
         _dibSection = NativeMethods.CreateDIBSection(
             _memDc, ref info, NativeMethods.DIB_RGB_COLORS, out _dibBits, IntPtr.Zero, 0);
         if (_dibSection == IntPtr.Zero)
         {
-            throw new InvalidOperationException(
-                $"CreateDIBSection 失败，Win32 错误码 {Marshal.GetLastWin32Error()}");
+            // 失败路径也要回收已创建的 DC，否则每次尺寸变化都漏一个 GDI 对象
+            int error = Marshal.GetLastWin32Error();
+            NativeMethods.DeleteDC(_memDc);
+            _memDc = IntPtr.Zero;
+            throw new InvalidOperationException($"CreateDIBSection 失败，Win32 错误码 {error}");
         }
 
         _oldBitmap = NativeMethods.SelectObject(_memDc, _dibSection);

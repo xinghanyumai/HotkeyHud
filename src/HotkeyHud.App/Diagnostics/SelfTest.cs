@@ -57,11 +57,17 @@ internal static class SelfTest
         Record(sawDown && sawUp, "S1-A1 Raw Input 通路",
             $"F24 按下={sawDown} 松开={sawUp}，共收到 {captured.Count} 个事件");
 
-        // 阈值 2ms：取 §八「按键到首帧 ≤120ms」预算的 1/60，留出 GC 与调度抖动余量。
+        // 双判据：p50 抓稳态开销（阈值 0.5ms），p99 抓偶发阻塞路径（阈值 5ms）。
+        // 单看 p99 会因机器繁忙误报，单看 p50 又抓不到「某些事件特别慢」的缺陷。
         // Raw Input 是异步投递，回调耗时不会阻塞被输入窗口的按键——这一点由 --typing-test 实测证明。
-        Record(hud.Input.P99CallbackMs < 2.0, "S1-A2 输入回调不阻塞",
-            $"WM_INPUT 回调 p99 = {hud.Input.P99CallbackMs:F3} ms（阈值 2.000 ms），"
-            + $"最大 {hud.Input.MaxCallbackMs:F3} ms，样本 {captured.Count} 个");
+        // 必须同时断言样本数：没有样本时各分位返回 0，会变成永远通过的假断言。
+        int samples = captured.Count;
+        double p50 = hud.Input.P50CallbackMs;
+        double p99 = hud.Input.P99CallbackMs;
+        bool callbackFast = samples > 0 && p50 < 0.5 && p99 < 5.0;
+        Record(callbackFast, "S1-A2 输入回调不阻塞",
+            $"p50 = {p50:F3} ms（阈值 0.500），p99 = {p99:F3} ms（阈值 5.000），"
+            + $"最大 {hud.Input.MaxCallbackMs:F3} ms，样本 {samples} 个");
     }
 
     private static void InjectNoOpKeys(int count)
@@ -82,13 +88,15 @@ internal static class SelfTest
         Pump(200);
 
         IntPtr hwnd = hud.Overlay.Handle;
-        var bounds = Screen.PrimaryScreen?.Bounds ?? new Rectangle(0, 0, 1920, 1080);
+        bool visible = NativeMethods.IsWindowVisible(hwnd);
+        Rectangle panel = HudApp.PanelBounds();
         var center = new NativeMethods.POINT(
-            bounds.X + bounds.Width / 2, bounds.Y + bounds.Height / 2);
+            panel.X + panel.Width / 2, panel.Y + panel.Height / 2);
         IntPtr hit = NativeMethods.WindowFromPoint(center);
 
-        Record(hit != hwnd, "S1-B 鼠标穿透",
-            $"WindowFromPoint(屏幕中心) = 0x{hit.ToInt64():X}，覆盖窗 = 0x{hwnd.ToInt64():X}");
+        // 必须先确认窗口真的显示了，否则「点不中它」毫无意义
+        Record(visible && hit != hwnd, "S1-B 鼠标穿透",
+            $"可见={visible}，WindowFromPoint(屏幕中心) = 0x{hit.ToInt64():X}，覆盖窗 = 0x{hwnd.ToInt64():X}");
 
         IntPtr foregroundAfter = NativeMethods.GetForegroundWindow();
         Record(foregroundBefore == foregroundAfter, "S1-C 不抢焦点",
@@ -97,12 +105,17 @@ internal static class SelfTest
         long exStyle = NativeMethods.GetWindowLongPtr(hwnd, NativeMethods.GWL_EXSTYLE).ToInt64();
         bool toolWindow = (exStyle & NativeMethods.WS_EX_TOOLWINDOW) != 0;
         bool appWindow = (exStyle & NativeMethods.WS_EX_APPWINDOW) != 0;
-        Record(toolWindow && !appWindow, "S1-D 不进 Alt+Tab / 任务栏",
-            $"WS_EX_TOOLWINDOW={toolWindow} WS_EX_APPWINDOW={appWindow}，可见={NativeMethods.IsWindowVisible(hwnd)}");
+        // 说明：Alt+Tab 列表没有公开的查询 API，这里验证的是控制它的窗口样式机制。
+        // 真人确认「Alt+Tab 里看不到面板」仍是交付前的手工步骤。
+        Record(toolWindow && !appWindow, "S1-D 不进 Alt+Tab / 任务栏（样式机制）",
+            $"WS_EX_TOOLWINDOW={toolWindow} WS_EX_APPWINDOW={appWindow}，可见={visible}");
 
         NativeMethods.GetWindowRect(hwnd, out NativeMethods.RECT rect);
-        Record(rect.Width > 0 && rect.Height > 0, "S1-E 覆盖窗尺寸",
-            $"GetWindowRect = ({rect.Left},{rect.Top}) {rect.Width}×{rect.Height}");
+        bool geometryOk = rect.Left == panel.X && rect.Top == panel.Y
+                          && rect.Width == panel.Width && rect.Height == panel.Height;
+        Record(geometryOk, "S1-E 覆盖窗几何",
+            $"期望 ({panel.X},{panel.Y}) {panel.Width}×{panel.Height}，"
+            + $"实际 ({rect.Left},{rect.Top}) {rect.Width}×{rect.Height}");
 
         hud.HideOverlay();
         Pump(120);
@@ -114,10 +127,13 @@ internal static class SelfTest
     {
         using var process = Process.GetCurrentProcess();
         process.Refresh();
-        double privateMb = process.PrivateMemorySize64 / 1024.0 / 1024.0;
+        double commitMb = process.PrivateMemorySize64 / 1024.0 / 1024.0;
         double workingMb = process.WorkingSet64 / 1024.0 / 1024.0;
-        Record(privateMb <= 45.0, "性能-空载私有工作集",
-            $"提交大小 {privateMb:F1} MB（目标 ≤ 45 MB），工作集 {workingMb:F1} MB");
+
+        // §八 的「空载私有工作集」在任务管理器里对应「提交大小」这一列。
+        // WorkingSet64 含 CLR / WinForms 程序集映射的共享页，不是私有口径，只作参考。
+        Record(commitMb <= 45.0, "性能-空载提交大小",
+            $"提交大小 {commitMb:F1} MB（§八 目标 ≤ 45 MB）；总工作集 {workingMb:F1} MB 含共享框架页");
     }
 
     private static void Record(bool passed, string name, string detail)

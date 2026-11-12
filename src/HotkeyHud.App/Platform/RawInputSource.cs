@@ -11,7 +11,10 @@ public enum InputKind
     MouseWheel,
 }
 
-/// <summary>采集到的一次输入。时间戳为单调时钟毫秒，与系统时间无关。</summary>
+/// <summary>
+/// 采集到的一次输入。时间戳为单调时钟毫秒，与系统时间无关。
+/// <see cref="InputKind.MouseWheel"/> 时 <c>Code</c> 是滚轮增量（±120），<c>IsDown</c> 无意义。
+/// </summary>
 public readonly record struct InputEvent(InputKind Kind, int Code, bool IsDown, long TimestampMs);
 
 /// <summary>
@@ -67,8 +70,12 @@ public sealed class RawInputSource : IDisposable
         if (!NativeMethods.RegisterRawInputDevices(
                 devices, (uint)devices.Length, (uint)Marshal.SizeOf<NativeMethods.RAWINPUTDEVICE>()))
         {
-            throw new InvalidOperationException(
-                $"RegisterRawInputDevices 失败，Win32 错误码 {Marshal.GetLastWin32Error()}");
+            int error = Marshal.GetLastWin32Error();
+            // 构造失败时 Dispose 不会被调用，这里必须自己回收，否则漏句柄与 HGlobal
+            _window.DestroyHandle();
+            Marshal.FreeHGlobal(_buffer);
+            _buffer = IntPtr.Zero;
+            throw new InvalidOperationException($"RegisterRawInputDevices 失败，Win32 错误码 {error}");
         }
     }
 
@@ -81,22 +88,27 @@ public sealed class RawInputSource : IDisposable
     /// <summary>单次 WM_INPUT 回调内的最大耗时，毫秒（用于自检「不阻塞输入」）。</summary>
     public double MaxCallbackMs { get; private set; }
 
-    /// <summary>是否采样回调耗时。默认关闭，避免诊断代码进入生产热路径。</summary>
+    /// <summary>
+    /// 是否采样回调耗时明细（p99 用）。默认关闭；最大值始终统计，
+    /// 两次 GetTimestamp 的开销可忽略，不值得为此加分支。
+    /// </summary>
     public bool CollectStats { get; set; }
 
-    /// <summary>回调耗时的 99 分位，毫秒。用分位数而非最大值，避免把 GC 偶发停顿当成设计缺陷。</summary>
-    public double P99CallbackMs
-    {
-        get
-        {
-            if (_samples.Count == 0)
-            {
-                return 0;
-            }
+    /// <summary>回调耗时的中位数，毫秒。反映稳态开销，不受偶发调度抖动影响。</summary>
+    public double P50CallbackMs => Percentile(0.50);
 
-            var sorted = _samples.OrderBy(v => v).ToList();
-            return sorted[(int)((sorted.Count - 1) * 0.99)];
+    /// <summary>回调耗时的 99 分位，毫秒。用于捕捉「偶发但会阻塞」的路径。</summary>
+    public double P99CallbackMs => Percentile(0.99);
+
+    private double Percentile(double p)
+    {
+        if (_samples.Count == 0)
+        {
+            return 0;
         }
+
+        var sorted = _samples.OrderBy(v => v).ToList();
+        return sorted[(int)((sorted.Count - 1) * p)];
     }
 
     /// <summary>清零耗时统计。首次回调含 JIT 与封送初始化，测量前需预热并重置。</summary>

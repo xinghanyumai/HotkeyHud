@@ -31,10 +31,13 @@ public sealed class HudApp : IDisposable
 
     private void OnInput(InputEvent evt)
     {
+#if DEBUG
+        // 仅调试构建保留的手工开关，避免发布版里出现未定义行为的按键逻辑
         if (evt.Kind == InputKind.Key && evt.Code == ToggleKey && evt.IsDown)
         {
             Toggle();
         }
+#endif
     }
 
     public void Toggle()
@@ -51,15 +54,19 @@ public sealed class HudApp : IDisposable
 
     public void ShowOverlay()
     {
+        _overlay.ShowNoActivate(PanelBounds(), Color.FromArgb(235, 24, 24, 28), "HUD · S1");
+        _visible = true;
+    }
+
+    /// <summary>面板几何的唯一来源：显示与自检都用它，避免自检和实现各写一份坐标。</summary>
+    public static Rectangle PanelBounds()
+    {
         Rectangle area = Screen.PrimaryScreen?.Bounds ?? new Rectangle(0, 0, 1920, 1080);
-        var bounds = new Rectangle(
+        return new Rectangle(
             area.X + (area.Width - 420) / 2,
             area.Y + (area.Height - 180) / 2,
             420,
             180);
-
-        _overlay.ShowNoActivate(bounds, Color.FromArgb(235, 24, 24, 28), "HUD · S1");
-        _visible = true;
     }
 
     public void HideOverlay()

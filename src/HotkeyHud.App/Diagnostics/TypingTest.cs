@@ -69,15 +69,25 @@ internal static class TypingTest
         var lastCharClock = Stopwatch.StartNew();
         int index = 0;
         int injectionFailures = 0;
+        bool focusLost = false;
         while (clock.Elapsed.TotalSeconds < seconds)
         {
+            // 前台窗口一旦被切走必须立刻中止，否则剩余成千上万个字符会打进用户的文档
+            if (NativeMethods.GetForegroundWindow() != targetHandle)
+            {
+                focusLost = true;
+                break;
+            }
+
             char c = Pattern[index++ % Pattern.Length];
-            if (!NativeMethods.SendUnicodeChar(c))
+            if (NativeMethods.SendUnicodeChar(c))
+            {
+                expected.Append(c);
+            }
+            else
             {
                 injectionFailures++;
             }
-
-            expected.Append(c);
 
             // 5ms 间隔：过快注入会超出系统输入队列，测出来的是注入器而不是 HUD
             while (lastCharClock.Elapsed.TotalMilliseconds < 5)
@@ -103,10 +113,12 @@ internal static class TypingTest
         Pump(100);
 
         double elapsed = clock.Elapsed.TotalSeconds;
-        report.Add($"[{(mismatch < 0 ? "PASS" : "FAIL")}] S1-G 连续输入不丢字 — "
+        bool textOk = mismatch < 0 && !focusLost && injectionFailures == 0;
+        report.Add($"[{(textOk ? "PASS" : "FAIL")}] S1-G 连续输入不丢字 — "
                    + $"注入 {want.Length} 字符 / {elapsed:F1}s（注入失败 {injectionFailures} 次），"
                    + $"实际收到 {actual.Length} 字符"
-                   + (mismatch < 0 ? "，逐字一致" : $"，第 {mismatch} 个字符起不一致"));
+                   + (mismatch < 0 ? "，逐字一致" : $"，第 {mismatch} 个字符起不一致")
+                   + (focusLost ? "；前台窗口被切走，测试已中止" : string.Empty));
         if (mismatch >= 0)
         {
             report.Add($"      期望前 40 字：{Head(want)}");
