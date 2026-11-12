@@ -43,6 +43,16 @@ internal static class Cases
 
         Check.Equal(0, shows, "299ms 时不应请求显示");
         Check.Equal(HudState.Armed, sm.State, "299ms 时应仍处于 Armed");
+
+        // 阈值范围校验（S2 整改第 1 项）：越界必须抛，不许静默接受
+        Check.Throws<ArgumentOutOfRangeException>(
+            () => new TriggerStateMachine(dwellMs: 79), "DwellMs 低于下界应抛异常");
+        Check.Throws<ArgumentOutOfRangeException>(
+            () => new TriggerStateMachine(dwellMs: 5001), "DwellMs 高于上界应抛异常");
+        Check.Throws<ArgumentOutOfRangeException>(
+            () => new TriggerStateMachine(flashMs: 0), "FlashMs 越界应抛异常");
+        Check.Throws<ArgumentOutOfRangeException>(
+            () => new TriggerStateMachine { DwellMs = 10000 }, "DwellMs 设值越界应抛异常");
     }
 
     private static void Case02_DwellAtThresholdShows()

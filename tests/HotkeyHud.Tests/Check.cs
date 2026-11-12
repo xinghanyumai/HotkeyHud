@@ -36,6 +36,26 @@ internal static class Check
         }
     }
 
+    public static void Throws<TException>(Action action, string message)
+        where TException : Exception
+    {
+        try
+        {
+            action();
+        }
+        catch (TException)
+        {
+            return;
+        }
+        catch (Exception ex)
+        {
+            throw new CheckFailedException(
+                $"{message}（期望 {typeof(TException).Name}，实际 {ex.GetType().Name}）");
+        }
+
+        throw new CheckFailedException($"{message}（期望 {typeof(TException).Name}，实际未抛异常）");
+    }
+
     private static string Describe<T>(T value) => value switch
     {
         null => "null",

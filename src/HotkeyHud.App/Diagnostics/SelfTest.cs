@@ -38,6 +38,7 @@ internal static class SelfTest
         CheckIdleMemory();
 
         CheckInputPath(hud, captured);
+        ReportModifierRepeat(captured);
         CheckOverlay(hud);
 
         return Flush();
@@ -74,8 +75,28 @@ internal static class SelfTest
             + $"最大 {hud.Input.MaxCallbackMs:F3} ms，样本 {samples} 个");
     }
 
-    private static void InjectNoOpKeys(int count)
+    /// <summary>
+    /// S2 整改第 3 项：确认「修饰键自动重复」是否真实存在。
+    /// 结论只影响那条守卫是「必需」还是「无害的防御性代码」，两种结论都必须留证据——
+    /// 否则将来换输入源时无法判断它是否还在起作用。
+    /// 按住时长取 1200ms 而不是 500ms：系统默认重复延迟可达 500ms，太短会测出假阴性。
+    /// </summary>
+    private static void ReportModifierRepeat(List<InputEvent> captured)
     {
+        captured.Clear();
+        NativeMethods.keybd_event(VkNoOp, 0, 0, UIntPtr.Zero); // 按下后不松
+        Pump(1200);
+        int downs = captured.Count(e => e.Kind == InputKind.Key && e.Code == VkNoOp && e.IsDown);
+        NativeMethods.keybd_event(VkNoOp, 0, NativeMethods.KEYEVENTF_KEYUP, UIntPtr.Zero);
+        Pump(100);
+
+        Inform($"按住 F24 1200ms 期间收到 {downs} 次按下 —— 系统自动重复"
+               + (downs > 1
+                   ? "存在，状态机的重复守卫是必需的"
+                   : "在注入路径下不存在，守卫按防御性代码保留（物理键盘可能不同）"));
+    }
+
+    private static void InjectNoOpKeys(int count)    {
         for (int i = 0; i < count; i++)
         {
             NativeMethods.keybd_event(VkNoOp, 0, 0, UIntPtr.Zero);
@@ -161,10 +182,14 @@ internal static class SelfTest
         Report.Add($"[{(passed ? "PASS" : "FAIL")}] {name} — {detail}");
     }
 
+    /// <summary>只记录信息，不计入通过/失败数（用于留证据而非判定）。</summary>
+    private static void Inform(string detail) => Report.Add($"[INFO] {detail}");
+
     private static int Flush()
     {
-        int total = Report.Count;
-        Report.Add($"--- 通过 {total - _failures}，失败 {_failures} ---");
+        // 只数 PASS/FAIL 行：INFO 行只留证据，不参与计数
+        int passed = Report.Count(line => line.StartsWith("[PASS]", StringComparison.Ordinal));
+        Report.Add($"--- 通过 {passed}，失败 {_failures} ---");
 
         string text = string.Join(Environment.NewLine, Report);
         TryWriteConsole(text);

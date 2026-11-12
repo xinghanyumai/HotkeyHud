@@ -17,9 +17,17 @@ public enum HudState
 /// </summary>
 public sealed class TriggerStateMachine
 {
+    /// <summary>§5.3.2 规定的阈值下界：低于 200ms 正常打字会闪，80ms 是硬下限。</summary>
+    public const int MinTimingMs = 80;
+
+    /// <summary>阈值上界：高于 400ms 查询意图会落空，5000ms 是硬上限。</summary>
+    public const int MaxTimingMs = 5000;
+
     private readonly HashSet<int> _heldNonModifierKeys = new();
 
     private Modifier _heldModifiers;
+    private int _dwellMs = 300;
+    private int _flashMs = 500;
     private long _armedAtMs;
     private long _flashStartedMs;
     private bool _blockedUntilRelease;
@@ -31,9 +39,19 @@ public sealed class TriggerStateMachine
         FlashMs = flashMs;
     }
 
-    public int DwellMs { get; set; }
+    /// <summary>长按阈值。越界抛 <see cref="ArgumentOutOfRangeException"/>，不静默接受。</summary>
+    public int DwellMs
+    {
+        get => _dwellMs;
+        set => _dwellMs = ValidateTiming(value, nameof(DwellMs));
+    }
 
-    public int FlashMs { get; set; }
+    /// <summary>闪烁时长。越界抛 <see cref="ArgumentOutOfRangeException"/>，不静默接受。</summary>
+    public int FlashMs
+    {
+        get => _flashMs;
+        set => _flashMs = ValidateTiming(value, nameof(FlashMs));
+    }
 
     public HudState State { get; private set; } = HudState.Idle;
 
@@ -124,7 +142,13 @@ public sealed class TriggerStateMachine
 
     public void OnMouseButton() => CollapseIfActive(block: false);
 
-    public void OnForegroundChanged() => CollapseIfActive(block: false);
+    public void OnForegroundChanged()
+    {
+        // 前台变了，之前按住的非修饰键一律视为已松开：漏掉一次 key-up 不该造成永久阻塞
+        _heldNonModifierKeys.Clear();
+        CollapseIfActive(block: false);
+        TryUnblock();
+    }
 
     /// <summary>回到初始状态。面板正在显示时会先发一次收起，避免 UI 残留。</summary>
     public void Reset()
@@ -235,6 +259,12 @@ public sealed class TriggerStateMachine
     }
 
     private bool ShouldFlash(Combo combo) => FlashPredicate?.Invoke(combo) ?? true;
+
+    private static int ValidateTiming(int value, string name)
+        => value is >= MinTimingMs and <= MaxTimingMs
+            ? value
+            : throw new ArgumentOutOfRangeException(
+                name, value, $"{name} 必须在 {MinTimingMs}–{MaxTimingMs} ms 之间");
 
     /// <summary>§5.3.1：必须等修饰键与非修饰键全部松开，否则 Ctrl+C 之后会突然弹面板。</summary>
     private void TryUnblock()
