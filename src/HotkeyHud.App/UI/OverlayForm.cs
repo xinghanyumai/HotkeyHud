@@ -31,13 +31,37 @@ public sealed class OverlayForm : Form
     private int _baseWidth;
     private float _baseScale;
 
-    public OverlayForm()
+    // 淡入（§6 v1.4：120ms、16ms 一帧、ease-out；隐藏不做动画）
+    private const int FadeDurationMs = 120;
+    private const int FadeFrameMs = 16;
+    private const int FadeFrames = FadeDurationMs / FadeFrameMs;
+
+    private readonly Func<bool> _animationsEnabled;
+    private readonly System.Windows.Forms.Timer _fadeTimer;
+    private int _fadeFrame;
+    private bool _isVisible;
+    private HudModel? _lastModel;
+    private Combo? _lastHighlight;
+
+    public OverlayForm(Func<bool>? animationsEnabled = null)
     {
         FormBorderStyle = FormBorderStyle.None;
         ShowInTaskbar = false;
         StartPosition = FormStartPosition.Manual;
         SetStyle(ControlStyles.UserPaint | ControlStyles.Opaque, true);
+
+        _animationsEnabled = animationsEnabled ?? SystemAnimationsEnabled;
+        _fadeTimer = new System.Windows.Forms.Timer { Interval = FadeFrameMs };
+        _fadeTimer.Tick += OnFadeTick;
     }
+
+    /// <summary>本次显示一共推了几帧。1 = 没有动画；验收用它区分「有淡入」与「无淡入」。</summary>
+    public int FadeFramesPushed { get; private set; }
+
+    /// <summary>系统「减少动画」开关（SPI_GETCLIENTAREAANIMATION）。</summary>
+    public static bool SystemAnimationsEnabled()
+        => !NativeMethods.SystemParametersInfo(NativeMethods.SPI_GETCLIENTAREAANIMATION, 0, out bool enabled, 0)
+           || enabled;
 
     protected override CreateParams CreateParams
     {
@@ -53,20 +77,71 @@ public sealed class OverlayForm : Form
         }
     }
 
-    /// <summary>按 §6 规格渲染快捷键面板。尺寸由内容决定，位置在光标所在屏的下缘居中。</summary>
+    /// <summary>
+    /// 按 §6 规格渲染快捷键面板：先按光标挑屏，再用该屏的 DPI 算尺寸，最后决定贴下缘还是上缘。
+    /// 每次呈现都重算——光标换屏或换半边时必须跟着走。
+    /// </summary>
     public void ShowModel(HudModel model, Combo? highlight)
     {
-        // 同一份模型 = 同一个面板会话：几何必须锁死。
-        // 否则光标跨到别的显示器时，高亮那一帧会算出不同的 bounds，触发 DIB 重建并闪一下（§3.1）。
-        if (ReferenceEquals(_baseModel, model) && _baseItems is not null)
+        (Rectangle bounds, float scale) = ResolveBounds(model);
+        PresentModel(bounds, model, highlight, scale);
+    }
+
+    /// <summary>
+    /// 面板已经显示时重新贴边。返回 true 表示位置变了。
+    /// 由 20ms 计时器驱动，保证「光标换半边 → 100ms 内翻到另一侧」。
+    /// </summary>
+    public bool RefreshAnchor()
+    {
+        if (!_isVisible || _lastModel is null)
         {
-            PresentModel(LastBounds, model, highlight, _baseScale);
-            return;
+            return false;
         }
 
-        Rectangle workArea = Screen.FromPoint(Cursor.Position).WorkingArea;
-        float scale = DpiScale();
-        PresentModel(HudPanel.ComputeBounds(model, scale, workArea), model, highlight, scale);
+        (Rectangle bounds, float scale) = ResolveBounds(_lastModel);
+        if (bounds == LastBounds)
+        {
+            return false;
+        }
+
+        PresentModel(bounds, _lastModel, _lastHighlight, scale);
+        return true;
+    }
+
+    private (Rectangle Bounds, float Scale) ResolveBounds(HudModel model)
+    {
+        Point cursor = Cursor.Position;
+        MonitorInfo monitor = ScreenAnchor.Pick(EnumerateMonitors(), cursor);
+        float scale = monitor.Scale;
+        Size size = HudPanel.Measure(model, scale, monitor.WorkArea.Width);
+        return (ScreenAnchor.Anchor(monitor, size, cursor), scale);
+    }
+
+    /// <summary>把 WinForms 的屏幕表补上每屏 DPI。GetDpiForMonitor 拿的是「该屏」的缩放，与窗口当前在哪无关。</summary>
+    private static IReadOnlyList<MonitorInfo> EnumerateMonitors()
+    {
+        Screen[] screens = Screen.AllScreens;
+        var monitors = new List<MonitorInfo>(screens.Length);
+
+        foreach (Screen screen in screens)
+        {
+            var center = new NativeMethods.POINT(
+                screen.Bounds.X + screen.Bounds.Width / 2,
+                screen.Bounds.Y + screen.Bounds.Height / 2);
+
+            uint dpi = 96;
+            IntPtr handle = NativeMethods.MonitorFromPoint(center, NativeMethods.MONITOR_DEFAULTTONEAREST);
+            if (handle != IntPtr.Zero
+                && NativeMethods.GetDpiForMonitor(handle, NativeMethods.MDT_EFFECTIVE_DPI, out uint dpiX, out _) == 0
+                && dpiX > 0)
+            {
+                dpi = dpiX;
+            }
+
+            monitors.Add(new MonitorInfo(handle, screen.Bounds, screen.WorkingArea, dpi));
+        }
+
+        return monitors;
     }
 
     /// <summary>S1 自检用的最简显示：一块纯色圆角 + 一行文字。不要删，--selftest 依赖它。</summary>
@@ -75,8 +150,12 @@ public sealed class OverlayForm : Form
         Present(bounds, graphics => DrawDebugLabel(graphics, bounds.Width, bounds.Height, background, label));
     }
 
+    /// <summary>隐藏必须立即生效——这是「不打扰」的底线，不做淡出。</summary>
     public void HideOverlay()
     {
+        _fadeTimer.Stop();
+        _isVisible = false;
+
         if (IsHandleCreated)
         {
             NativeMethods.ShowWindow(Handle, NativeMethods.SW_HIDE);
@@ -157,9 +236,11 @@ public sealed class OverlayForm : Form
             HudPanel.DrawHighlight(graphics, _baseItems!, combo, scale, bounds.Width);
         }
 
+        _lastModel = model;
+        _lastHighlight = highlight;
+
         CopyToDib(_canvas!, _dibBits, bounds.Width, bounds.Height);
-        PushLayered(bounds);
-        ShowNoActivateTopmost();
+        ShowWithFade(bounds);
     }
 
     private void Present(Rectangle bounds, Action<Graphics> draw)
@@ -172,9 +253,52 @@ public sealed class OverlayForm : Form
         graphics.Clear(Color.Transparent);
         draw(graphics);
 
+        _lastModel = null;
+        _lastHighlight = null;
+
         CopyToDib(_canvas!, _dibBits, bounds.Width, bounds.Height);
-        PushLayered(bounds);
+        ShowWithFade(bounds);
+    }
+
+    /// <summary>
+    /// 首次出现走淡入；已经显示时（高亮切换、重新贴边）直接满不透明推上去，不重复动画。
+    /// </summary>
+    private void ShowWithFade(Rectangle bounds)
+    {
+        bool alreadyVisible = _isVisible;
+        _isVisible = true;
+
+        if (!alreadyVisible && _animationsEnabled())
+        {
+            FadeFramesPushed = 0;
+            _fadeFrame = 0;
+            PushLayered(bounds, 0);
+            ShowNoActivateTopmost();
+            _fadeTimer.Start();
+            return;
+        }
+
+        _fadeTimer.Stop();
+        FadeFramesPushed++;
+        PushLayered(bounds, 255);
         ShowNoActivateTopmost();
+    }
+
+    private void OnFadeTick(object? sender, EventArgs e)
+    {
+        _fadeFrame++;
+        double t = Math.Min(1.0, _fadeFrame / (double)FadeFrames);
+        // ease-out：起步快、收尾缓，比线性更像「浮现」
+        double eased = 1 - (1 - t) * (1 - t);
+        int alpha = (int)Math.Round(255 * eased);
+
+        PushLayered(LastBounds, alpha);
+        FadeFramesPushed++;
+
+        if (t >= 1)
+        {
+            _fadeTimer.Stop();
+        }
     }
 
     private void ShowNoActivateTopmost()
@@ -186,7 +310,7 @@ public sealed class OverlayForm : Form
         NativeMethods.ShowWindow(Handle, NativeMethods.SW_SHOWNOACTIVATE);
     }
 
-    private void PushLayered(Rectangle bounds)
+    private void PushLayered(Rectangle bounds, int alpha)
     {
         IntPtr screenDc = NativeMethods.GetDC(IntPtr.Zero);
         if (screenDc == IntPtr.Zero)
@@ -203,7 +327,7 @@ public sealed class OverlayForm : Form
             {
                 BlendOp = NativeMethods.AC_SRC_OVER,
                 BlendFlags = 0,
-                SourceConstantAlpha = 255,
+                SourceConstantAlpha = (byte)Math.Clamp(alpha, 0, 255),
                 AlphaFormat = NativeMethods.AC_SRC_ALPHA,
             };
 
@@ -218,18 +342,6 @@ public sealed class OverlayForm : Form
         {
             NativeMethods.ReleaseDC(IntPtr.Zero, screenDc);
         }
-    }
-
-    /// <summary>DPI 缩放系数。取窗口所在显示器的 DPI，拿不到时按 96 处理。</summary>
-    private float DpiScale()
-    {
-        uint dpi = NativeMethods.GetDpiForWindow(Handle);
-        if (dpi == 0)
-        {
-            dpi = (uint)DeviceDpi;
-        }
-
-        return dpi <= 0 ? 1f : dpi / 96f;
     }
 
     private void EnsureBaseCanvas(int width, int height)
@@ -404,6 +516,9 @@ public sealed class OverlayForm : Form
     {
         if (disposing)
         {
+            _fadeTimer.Stop();
+            _fadeTimer.Tick -= OnFadeTick;
+            _fadeTimer.Dispose();
             _canvasGraphics?.Dispose();
             _canvas?.Dispose();
             _baseCanvas?.Dispose();

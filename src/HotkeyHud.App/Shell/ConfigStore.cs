@@ -50,10 +50,17 @@ public sealed class ConfigStore
     /// <summary>最近一次损坏的原因，正常时为空串。</summary>
     public string LastCorruptReason { get; private set; } = string.Empty;
 
+    /// <summary>
+    /// 最近一次 <see cref="Load"/> 做过的「钳制」说明（值越界但整份配置仍然可用）。
+    /// 与损坏分开：钳制保留其它字段，损坏才整份作废。
+    /// </summary>
+    public IReadOnlyList<string> LastRepairs { get; private set; } = Array.Empty<string>();
+
     public AppConfig Load()
     {
         LastLoadWasCorrupt = false;
         LastCorruptReason = string.Empty;
+        LastRepairs = Array.Empty<string>();
 
         if (!File.Exists(FilePath))
         {
@@ -104,13 +111,18 @@ public sealed class ConfigStore
     private AppConfig Validate(ConfigDocument document)
     {
         int dwellMs = document.DwellMs ?? AppConfig.DefaultDwellMs;
-        if (dwellMs is < AppConfig.MinDwellMs or > AppConfig.MaxDwellMs)
+
+        // 值越界 → 钳制到边界并保留其它字段。整份作废的代价太大：
+        // 用户只想调 dwellMs，手滑写成 60000，不该连 knownShortcuts 一起丢。
+        if (dwellMs < AppConfig.MinDwellMs || dwellMs > AppConfig.MaxDwellMs)
         {
-            throw new ConfigCorruptException(
-                $"dwellMs = {dwellMs} 越界（{AppConfig.MinDwellMs}–{AppConfig.MaxDwellMs}）");
+            int clamped = Math.Clamp(dwellMs, AppConfig.MinDwellMs, AppConfig.MaxDwellMs);
+            LastRepairs = new[] { $"dwellMs = {dwellMs} 超出范围，已改为 {clamped}" };
+            dwellMs = clamped;
         }
 
-        // 熟记名单里出现解析不了的组合 → 按损坏处理。否则 KnownShortcutFilter 会在启动时抛。
+        // 熟记名单里出现解析不了的组合 → 按损坏处理。这不是「值越界」，
+        // 是内容本身没意义；而且 KnownShortcutFilter 会在启动时直接抛。
         if (document.KnownShortcuts is { } combos)
         {
             foreach (string combo in combos)

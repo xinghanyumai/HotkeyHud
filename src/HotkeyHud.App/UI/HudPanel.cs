@@ -519,6 +519,17 @@ internal static class HudPanel
                 continue;
             }
 
+            // §6 v1.4 不变量：同一组最多跨 2 列。已经是续块就不再拆，
+            // 整块塞进当前列——列会变高、平衡变差，但不变量优先。
+            if (IsContinuation(block.Title))
+            {
+                Append(columns[target], block);
+                heights[target] += block.Height;
+                pending.RemoveAt(0);
+                full[target] = true;
+                continue;
+            }
+
             // 剩余空间连「组名 + 1 条」都放不下：这一列就此封口
             if (remaining < titleCells + 1)
             {
@@ -583,9 +594,10 @@ internal static class HudPanel
     }
 
     private static string? ContinueTitle(string? title)
-        => title is null || title.EndsWith("（续）", StringComparison.Ordinal)
-            ? title
-            : title + "（续）";
+        => title is null || IsContinuation(title) ? title : title + "（续）";
+
+    private static bool IsContinuation(string? title)
+        => title is not null && title.EndsWith("（续）", StringComparison.Ordinal);
 
     private static int RowsOf(int cellCount)
         => cellCount == 0 ? 0 : (cellCount + Columns - 1) / Columns;

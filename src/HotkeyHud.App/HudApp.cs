@@ -207,6 +207,12 @@ public sealed class HudApp : IDisposable
         {
             _machine.OnTick(_input.NowMs);
             SyncTimer();
+
+            // 光标换屏或换到另一半屏幕时重新贴边，保证 100ms 内翻到另一侧
+            if (IsOverlayVisible)
+            {
+                _overlay.RefreshAnchor();
+            }
         }
         catch (Exception ex)
         {

@@ -1,13 +1,13 @@
 namespace HotkeyHud.App.Shell;
 
 /// <summary>
-/// 单实例守卫。<c>Global\</c> 命名对象在部分权限配置下需要 <c>SeCreateGlobalPrivilege</c>，
-/// 建不出来就退到 <c>Local\</c>——同一台机器上多用户各跑一份也能接受，总比崩掉好。
+/// 单实例守卫。**只用 <c>Local\</c>**：本工具是每用户每会话的东西——配置在 <c>%APPDATA%</c>、
+/// Raw Input 只收本会话输入、托盘图标属于本用户。快速用户切换时两个人各应有一份 HUD，
+/// 全局单实例反而是 bug；顺带还省掉了 <c>SeCreateGlobalPrivilege</c> 这条权限失败路径。
 /// </summary>
 public sealed class SingleInstance : IDisposable
 {
-    public const string GlobalName = @"Global\HotkeyHud.SingleInstance";
-    private const string LocalName = @"Local\HotkeyHud.SingleInstance";
+    public const string DefaultName = @"Local\HotkeyHud.SingleInstance";
 
     private readonly string _name;
     private Mutex? _mutex;
@@ -15,7 +15,7 @@ public sealed class SingleInstance : IDisposable
 
     public SingleInstance(string? name = null)
     {
-        _name = name ?? GlobalName;
+        _name = name ?? DefaultName;
     }
 
     public bool IsOwned => _owned;
@@ -27,41 +27,27 @@ public sealed class SingleInstance : IDisposable
             return true;
         }
 
-        foreach (string candidate in Candidates())
+        try
         {
-            try
+            var mutex = new Mutex(initiallyOwned: true, _name, out bool createdNew);
+            if (createdNew)
             {
-                var mutex = new Mutex(initiallyOwned: true, candidate, out bool createdNew);
-                if (createdNew)
-                {
-                    _mutex = mutex;
-                    _owned = true;
-                    return true;
-                }
+                _mutex = mutex;
+                _owned = true;
+                return true;
+            }
 
-                mutex.Dispose();
-                return false; // 名字能建但已被占用：确实是第二个实例
-            }
-            catch (UnauthorizedAccessException)
-            {
-                // 建不出 Global\ 就试 Local\，不要把启动路径炸掉
-            }
-            catch (IOException)
-            {
-                return false;
-            }
+            mutex.Dispose();
+            return false;
         }
-
-        return false;
-    }
-
-    private IEnumerable<string> Candidates()
-    {
-        yield return _name;
-
-        if (string.Equals(_name, GlobalName, StringComparison.Ordinal))
+        catch (UnauthorizedAccessException)
         {
-            yield return LocalName;
+            // 连 Local\ 都建不出来：宁可让用户开两个，也不要炸掉启动路径
+            return false;
+        }
+        catch (IOException)
+        {
+            return false;
         }
     }
 

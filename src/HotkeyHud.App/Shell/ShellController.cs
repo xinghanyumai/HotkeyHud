@@ -37,6 +37,11 @@ public sealed class ShellController : IDisposable
                 + "本次用默认值启动。",
                 warning: true);
         }
+        else if (_store.LastRepairs.Count > 0)
+        {
+            // 钳制必须说出来，否则用户会以为改生效了
+            _tray.ShowBalloon("配置已修正", string.Join("；", _store.LastRepairs), warning: true);
+        }
     }
 
     public event Action? ExitRequested;
@@ -62,6 +67,11 @@ public sealed class ShellController : IDisposable
         _config = _store.Load().With(AutoStart.IsEnabled());
         _hud.ReloadData(_config);
         PushTrayState();
+
+        if (_store.LastRepairs.Count > 0)
+        {
+            _tray.ShowBalloon("配置已修正", string.Join("；", _store.LastRepairs), warning: true);
+        }
     }
 
     public void OpenConfigDirectory()

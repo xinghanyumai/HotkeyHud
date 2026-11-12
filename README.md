@@ -47,6 +47,7 @@ src/HotkeyHud.App/
   Platform/ForegroundWatcher.cs  前台窗口变化监听（SetWinEventHook）
   Platform/ForegroundProbe.cs    前台进程名查询（缓存 + Invalidate）
   Platform/SuppressionProbe.cs   §2.1 六个抑制信号采集（QUNS / 矩形 / 样式 / 类名 / 进程）
+  Platform/ScreenAnchor.cs       按光标挑屏 + 上缘翻转（纯函数，可喂合成布局断言）
   Shell/AppConfig.cs             配置模型（只暴露 4 个字段）
   Shell/ConfigStore.cs           config.json 读写 + 损坏留证
   Shell/TrayIcon.cs              托盘图标（代码绘制 16×16）与 6 项菜单
@@ -91,10 +92,13 @@ dotnet run --project src/HotkeyHud.App -- --suppression-test --out=<目录>
 # ⑤ S5 外壳验收：托盘菜单 / 暂停 / 配置生效 / 配置损坏 / 自启 / 单实例
 dotnet run --project src/HotkeyHud.App -- --shell-test
 
-# ⑥ S1 回归门禁：覆盖窗四条硬指标 + Raw Input 通路 + 内存三口径
+# ⑥ S6 打磨验收：混合 DPI 逻辑 / 上缘翻转 / 淡入 / 立即隐藏
+dotnet run --project src/HotkeyHud.App -- --s6-test --out=<目录>
+
+# ⑦ S1 回归门禁：覆盖窗四条硬指标 + Raw Input 通路 + 内存三口径
 dotnet run --project src/HotkeyHud.App -- --selftest
 
-# ⑦ 进程内输入通路冒烟（跨进程真实键盘打字待人工复核，见「偏差」）
+# ⑧ 进程内输入通路冒烟（跨进程真实键盘打字待人工复核，见「偏差」）
 dotnet run --project src/HotkeyHud.App -- --typing-test --seconds=60
 ```
 
@@ -192,6 +196,15 @@ $ dotnet run --project src/HotkeyHud.App -- --render-gallery --out=<目录>
 [PASS] Gallery07 首帧 <25ms、高亮切换 <8ms — 首帧全量 p95 = 9.13 ms（< 25，32 次）；高亮切换 p95 = 1.06 ms（< 8，40 次）
 --- 通过 7，失败 0 ---
 
+$ dotnet run --project src/HotkeyHud.App -- --s6-test --out=<目录>
+[PASS] S6-1 混合 DPI：按光标挑屏与取缩放 — 副屏 150%：尺寸按 1.5 缩放、边距 60；上缘 y=60、下缘 y=968
+[PASS] S6-2 上缘翻转 — 上半屏 → y=1408（下缘）；下半屏 → y=80（上缘）
+[PASS] S6-3 淡入 120ms — 推了 7 帧（120ms / 16ms 一帧，ease-out）
+[PASS] S6-4 关闭动画后无淡入 — 关闭动画后只推 1 帧（直接显示）
+[PASS] S6-5 隐藏立即生效 — HideOverlay 后同步不可见，无淡出
+[PASS] S6-6 本机显示器数量 — 1 块屏：\\.\DISPLAY1 3120×2080（主） —— **副屏截图未验证**
+--- 通过 6，失败 0 ---
+
 $ dotnet run --project src/HotkeyHud.App -- --shell-test
 [PASS] Shell01 托盘菜单 6 项可用 — 5 个可点击项 + 状态项；正常="正常 · 前台 chrome.exe"，暂停="已抑制（手动暂停） · 前台 chrome.exe"
 [PASS] Shell02 暂停生效 — 暂停期间不弹，恢复后正常弹
@@ -234,6 +247,7 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 | 面板全量重绘 p95 | < 25 ms | 9.13 ms（32 次采样） |
 | 面板高亮切换 p95 | < 8 ms | 1.06 ms（40 次采样） |
 | 12 条面板高度 | ≤ `min(320, 屏高×30%)` | 248 逻辑 px（上限 298），列高 6/6/5 |
+| 淡入帧数 | 120ms / 16ms ≈ 8 帧 | 7 帧（ease-out）；关闭系统动画后 1 帧 |
 | 单次抑制采集 p95 | < 5 ms | 0.42 ms（含 OpenProcess，100 次） |
 | 按键到首帧 | ≤ 120 ms | 未打点（含 dwell 300ms + 首帧渲染） |
 | 常驻句柄 | ≤ 500 | 未测（S5 托盘完成后测） |
@@ -353,5 +367,6 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 | S3 数据与渲染 | 通过（含 1 项整改） |
 | S3.5 布局修正 | 通过（键帽省略修饰键 / 组块不可跨列 / 底色不透明） |
 | S4 游戏抑制接入 | 通过（含 2 项整改） |
-| S5 托盘 / 配置 / 自启 | 完成（外壳 8/8，配置 4 字段实测生效） |
-| S6 打磨（动效 / 混合 DPI / 上缘翻转 / Acrylic） | 未开始，按需 |
+| S5 托盘 / 配置 / 自启 | 通过（含 2 项整改） |
+| S6 打磨（混合 DPI / 上缘翻转 / 淡入） | 完成（S6 6/6；副屏截图未验证） |
+| 发布准备（签名 / 安装包 / 用户 README） | 未开始 |

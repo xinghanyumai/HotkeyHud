@@ -365,6 +365,20 @@ internal static class NativeMethods
     [DllImport("user32.dll", SetLastError = true)]
     public static extern uint GetDpiForWindow(IntPtr hWnd);
 
+    // ---------- 多显示器 / DPI（§6 v1.4 混合 DPI）----------
+    public const uint MDT_EFFECTIVE_DPI = 0;
+    public const uint SPI_GETCLIENTAREAANIMATION = 0x1042;
+
+    [DllImport("shcore.dll")]
+    public static extern int GetDpiForMonitor(IntPtr hmonitor, uint dpiType, out uint dpiX, out uint dpiY);
+
+    [DllImport("user32.dll")]
+    public static extern IntPtr MonitorFromPoint(POINT pt, uint dwFlags);
+
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool SystemParametersInfo(uint uiAction, uint uiParam, out bool pvParam, uint fWinIni);
+
     // ---------- 抑制信号采集（§2.1）----------
     public const int WS_CAPTION = 0x00C00000;
     public const uint MONITOR_DEFAULTTONEAREST = 2;

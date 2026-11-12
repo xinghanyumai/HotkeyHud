@@ -17,6 +17,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <!-- 仅用于 OverlayForm.CopyToDib 的逐行像素拷贝（见该处注释） -->
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <!-- §6 v1.4：Per-Monitor V2。SystemAware 下副屏会被系统虚拟化，字会糊 -->
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
   </PropertyGroup>
 
 </Project>
