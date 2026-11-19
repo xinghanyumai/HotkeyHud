@@ -34,6 +34,13 @@ public static class HudBuilder
 
         List<Match> matches = Collect(profile, systemProfile, modifier, filter, out int hidden);
 
+        // §3.2 v1.6：未收录应用不再拿系统档案的零星 Ctrl 条目冒充内容。
+        // 除 Win 之外一律走引导空态——Win 面板的全部内容本来就是系统快捷键。
+        if (profile is null && modifier != Modifier.Win)
+        {
+            matches.Clear();
+        }
+
         int total = matches.Count;
         int pageCount = total == 0 ? 1 : (total + PageSize - 1) / PageSize;
         int page = Math.Clamp(pageIndex, 0, pageCount - 1);
@@ -101,17 +108,6 @@ public static class HudBuilder
         };
     }
 
-    /// <summary>总页数。UI 判断要不要装翻页钩子时用它，不必先构建整页模型。</summary>
-    public static int CountPages(
-        AppShortcutProfile? profile,
-        AppShortcutProfile? systemProfile,
-        Modifier modifier,
-        KnownShortcutFilter filter)
-    {
-        List<Match> matches = Collect(profile, systemProfile, modifier, filter, out _);
-        return matches.Count == 0 ? 1 : (matches.Count + PageSize - 1) / PageSize;
-    }
-
     private static List<Match> Collect(
         AppShortcutProfile? profile,
         AppShortcutProfile? systemProfile,
@@ -122,9 +118,11 @@ public static class HudBuilder
         hidden = 0;
         var matches = new List<Match>();
 
-        // 应用条目在前，系统条目在后（§2.5）
-        Append(matches, profile, modifier, filter, ref hidden);
-        Append(matches, systemProfile, modifier, filter, ref hidden);
+        // 应用条目在前，系统条目在后（§2.5）。
+        // 系统条目按组合去重：Word 的 Ctrl+Backspace 与系统档案的同名条目不能各占一格。
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        Append(matches, profile, modifier, filter, ref hidden, seen, dedupe: false);
+        Append(matches, systemProfile, modifier, filter, ref hidden, seen, dedupe: true);
 
         // 修饰键数量少的在前；OrderBy 是稳定排序，同数量保持原顺序
         return matches.OrderBy(match => match.ModifierCount).ToList();
@@ -135,7 +133,9 @@ public static class HudBuilder
         AppShortcutProfile? profile,
         Modifier modifier,
         KnownShortcutFilter filter,
-        ref int hidden)
+        ref int hidden,
+        HashSet<string> seen,
+        bool dedupe)
     {
         if (profile is null)
         {
@@ -154,6 +154,14 @@ public static class HudBuilder
             {
                 continue;
             }
+
+            string comboKey = Keys.Format(entry.Combo);
+            if (dedupe && !seen.Add(comboKey))
+            {
+                continue; // 应用档案里已有同一组合
+            }
+
+            seen.Add(comboKey);
 
             if (filter.IsKnown(entry.Combo))
             {

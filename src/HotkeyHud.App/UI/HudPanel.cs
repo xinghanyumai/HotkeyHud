@@ -42,6 +42,9 @@ internal static class HudPanel
     private const float ScreenMargin = 40f;
     private const float EmptyBodyHeight = 44f;
 
+    /// <summary>未收录应用的四行引导文案所需高度（标题 + 说明 + 两条建议）。</summary>
+    private const float GuidanceBodyHeight = 92f;
+
     /// <summary>组块超过这个高度才允许拆分并加「（续）」。超过它面板会高得离谱。</summary>
     private const int MaxRowsBeforeSplit = 8;
 
@@ -127,7 +130,7 @@ internal static class HudPanel
         List<Block> blocks = BuildBlocks(model);
         if (blocks.Count == 0)
         {
-            height += EmptyBodyHeight;
+            height += model.HasProfile ? EmptyBodyHeight : GuidanceBodyHeight;
         }
         else
         {
@@ -392,14 +395,36 @@ internal static class HudPanel
     private static void DrawEmptyBody(
         Graphics graphics, HudModel model, float scale, float x, float y, float contentWidth)
     {
-        string modifierName = model.Modifier == Modifier.None ? "修饰键" : model.Modifier.ToString();
-        string text = model.HasProfile
-            ? $"该应用没有 {modifierName} 组合的快捷键数据"
-            : $"未收录 {model.AppName}";
+        if (model.HasProfile)
+        {
+            string modifierName = model.Modifier == Modifier.None ? "修饰键" : model.Modifier.ToString();
+            graphics.DrawString(
+                $"该应用没有 {modifierName} 组合的快捷键数据",
+                FontOf(13f * scale), TextSecondaryBrush,
+                new RectangleF(x, y, contentWidth, EmptyBodyHeight * scale), LeftMiddle);
+            return;
+        }
+
+        // 未收录应用：给明确引导，不用「1 条数据」假装有内容（S7 返工 §3.2）
+        Font titleFont = FontOf(13f * scale);
+        Font bodyFont = FontOf(12f * scale);
+        float line = 20f * scale;
 
         graphics.DrawString(
-            text, FontOf(13f * scale), TextSecondaryBrush,
-            new RectangleF(x, y, contentWidth, EmptyBodyHeight * scale), LeftMiddle);
+            $"未收录 {model.AppName}", titleFont, TextPrimaryBrush,
+            new RectangleF(x, y, contentWidth, line), LeftMiddle);
+
+        graphics.DrawString(
+            "这个应用还没有快捷键档案", bodyFont, TextSecondaryBrush,
+            new RectangleF(x, y + line, contentWidth, line), LeftMiddle);
+
+        graphics.DrawString(
+            "· 按 Win 查看系统快捷键", bodyFont, TextSecondaryBrush,
+            new RectangleF(x, y + line * 2f, contentWidth, line), LeftMiddle);
+
+        graphics.DrawString(
+            "· 在 Data/apps 添加档案（见 README）", bodyFont, TextSecondaryBrush,
+            new RectangleF(x, y + line * 3f, contentWidth, line), LeftMiddle);
     }
 
     // ---------------- 规划与度量 ----------------

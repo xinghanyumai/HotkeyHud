@@ -30,6 +30,7 @@ internal static class Cases
         Program.Run("Case15 前台窗口切换立即收起", Case15_ForegroundChangedHides);
         Program.Run("Case16 前台切换后修饰键状态被清空", Case16_ForegroundChangeClearsModifiers);
         Program.Run("Case17 默认长按阈值为 450ms", Case17_DefaultDwellIs450);
+        Program.Run("Case18 未收录应用：非 Win 走引导，Win 仍显示系统档案", Case18_UnrecordedGuidance);
     }
 
     // ---------------- §5 状态机 ----------------
@@ -405,6 +406,28 @@ internal static class Cases
 
         Check.Equal(1, shows, "修饰键状态被清空后，重新长按应能弹出");
         Check.Equal(HudState.Visible, sm.State, "应进入 Visible");
+    }
+
+    private static void Case18_UnrecordedGuidance()
+    {
+        var system = Profile("system", "Windows", Entry("Win+D", "显示桌面"), Entry("Ctrl+Esc", "开始菜单"));
+        var filter = new KnownShortcutFilter(Array.Empty<string>());
+
+        // 未收录应用 + Ctrl：不拿系统档案的零星条目冒充内容（S7 返工 §3.2）
+        var ctrl = HudBuilder.Build(null, system, Modifier.Ctrl, filter, "豆包.exe");
+        Check.Equal(0, ctrl.TotalCount, "未收录应用的 Ctrl 面板应为空（走引导）");
+        Check.False(ctrl.HasProfile, "未收录应用 HasProfile 应为 false");
+
+        // 未收录应用 + Win：系统快捷键就是它的全部内容，必须保留
+        var win = HudBuilder.Build(null, system, Modifier.Win, filter, "豆包.exe");
+        Check.Equal(1, win.TotalCount, "Win 面板应显示系统档案的 Win 条目");
+        Check.False(win.HasProfile, "Win 面板仍标记为未收录");
+
+        // 已收录应用但该修饰键下没有条目：保留「该应用没有…」文案，不升级成引导
+        var recorded = Profile("app", "某应用", Entry("Ctrl+K", "插入超链接"));
+        var emptyShift = HudBuilder.Build(recorded, system, Modifier.Shift, filter, "某应用");
+        Check.Equal(0, emptyShift.TotalCount, "Shift 面板应为空");
+        Check.True(emptyShift.HasProfile, "已收录应用 HasProfile 应为 true");
     }
 
     private static void Case17_DefaultDwellIs450()

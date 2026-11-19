@@ -1,0 +1,149 @@
+{
+  "app": "msedge",
+  "displayName": "Edge",
+  "processNames": [
+    "msedge.exe"
+  ],
+  "shortcuts": [
+    {
+      "keys": "Ctrl+T",
+      "action": "新建标签页",
+      "group": "标签页"
+    },
+    {
+      "keys": "Ctrl+N",
+      "action": "新建窗口",
+      "group": "标签页"
+    },
+    {
+      "keys": "Ctrl+W",
+      "action": "关闭标签页",
+      "group": "标签页"
+    },
+    {
+      "keys": "Ctrl+Shift+T",
+      "action": "恢复关闭标签",
+      "group": "标签页"
+    },
+    {
+      "keys": "Ctrl+Shift+P",
+      "action": "隐私窗口",
+      "group": "标签页"
+    },
+    {
+      "keys": "Ctrl+Tab",
+      "action": "下一个标签页",
+      "group": "标签页"
+    },
+    {
+      "keys": "Ctrl+1",
+      "action": "第 1 个标签",
+      "group": "标签页"
+    },
+    {
+      "keys": "Ctrl+9",
+      "action": "最后一个标签",
+      "group": "标签页"
+    },
+    {
+      "keys": "Ctrl+K",
+      "action": "复制标签页",
+      "group": "标签页"
+    },
+    {
+      "keys": "Ctrl+L",
+      "action": "编辑地址栏",
+      "group": "地址栏"
+    },
+    {
+      "keys": "Ctrl+E",
+      "action": "地址栏搜索",
+      "group": "地址栏"
+    },
+    {
+      "keys": "Ctrl+Enter",
+      "action": "补全网址",
+      "group": "地址栏"
+    },
+    {
+      "keys": "Ctrl+D",
+      "action": "收藏当前页",
+      "group": "功能"
+    },
+    {
+      "keys": "Ctrl+I",
+      "action": "收藏夹窗格",
+      "group": "功能"
+    },
+    {
+      "keys": "Ctrl+J",
+      "action": "下载窗格",
+      "group": "功能"
+    },
+    {
+      "keys": "Ctrl+H",
+      "action": "历史记录",
+      "group": "功能"
+    },
+    {
+      "keys": "Ctrl+Shift+Delete",
+      "action": "清除浏览数据",
+      "group": "功能"
+    },
+    {
+      "keys": "Ctrl+Shift+L",
+      "action": "新标签查询",
+      "group": "功能"
+    },
+    {
+      "keys": "Ctrl+Shift+M",
+      "action": "网页笔记",
+      "group": "功能"
+    },
+    {
+      "keys": "Ctrl+R",
+      "action": "刷新页面",
+      "group": "网页"
+    },
+    {
+      "keys": "Ctrl+U",
+      "action": "查看源",
+      "group": "网页"
+    },
+    {
+      "keys": "Ctrl+=",
+      "action": "放大",
+      "group": "网页"
+    },
+    {
+      "keys": "Ctrl+-",
+      "action": "缩小",
+      "group": "网页"
+    },
+    {
+      "keys": "Ctrl+0",
+      "action": "重置缩放",
+      "group": "网页"
+    },
+    {
+      "keys": "Ctrl+F",
+      "action": "页内查找",
+      "group": "网页"
+    },
+    {
+      "keys": "Ctrl+P",
+      "action": "打印",
+      "group": "网页"
+    },
+    {
+      "keys": "Ctrl+Shift+R",
+      "action": "阅读视图",
+      "group": "网页"
+    },
+    {
+      "keys": "Ctrl+G",
+      "action": "转到页码",
+      "group": "PDF"
+    }
+  ]
+}

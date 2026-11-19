@@ -49,20 +49,20 @@ internal static class RenderGallery
             Path.Combine(AppContext.BaseDirectory, "Data", "apps"));
         var known = new KnownShortcutFilter();
 
-        Case("Gallery01 5 份档案可加载", () =>
+        Case("Gallery01 6 份档案可加载", () =>
         {
-            Require(repository.ProfileCount == 5,
-                $"ProfileCount = {repository.ProfileCount}，期望 5");
+            Require(repository.ProfileCount == 6,
+                $"ProfileCount = {repository.ProfileCount}，期望 6");
             Require(repository.DroppedShortcutCount == 0,
                 $"DroppedShortcutCount = {repository.DroppedShortcutCount}，期望 0");
-            return $"ProfileCount = 5，Dropped = 0，LoadErrors = {repository.LoadErrors.Count}";
+            return $"ProfileCount = 6，Dropped = 0，LoadErrors = {repository.LoadErrors.Count}";
         });
 
         HudModel normal = Build(repository, known, "chrome.exe", "Chrome");
         HudModel highlighted = normal;
         HudModel empty = new()
         {
-            AppName = "notepad.exe",
+            AppName = "豆包.exe",
             Modifier = Modifier.Ctrl,
             Groups = Array.Empty<HudGroup>(),
             TotalCount = 0,

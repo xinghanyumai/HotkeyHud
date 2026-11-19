@@ -214,6 +214,56 @@
       "keys": "Ctrl+Esc",
       "action": "打开开始菜单",
       "group": "系统"
+    },
+    {
+      "keys": "Ctrl+Shift+Enter",
+      "action": "以管理员运行",
+      "group": "系统"
+    },
+    {
+      "keys": "Ctrl+Shift+V",
+      "action": "粘贴为纯文本",
+      "group": "系统"
+    },
+    {
+      "keys": "Ctrl+Shift+T",
+      "action": "恢复关闭的窗口",
+      "group": "系统"
+    },
+    {
+      "keys": "Ctrl+Backspace",
+      "action": "删除左侧词",
+      "group": "系统"
+    },
+    {
+      "keys": "Ctrl+Delete",
+      "action": "删除右侧词",
+      "group": "系统"
+    },
+    {
+      "keys": "Ctrl+Home",
+      "action": "文档开头",
+      "group": "系统"
+    },
+    {
+      "keys": "Ctrl+End",
+      "action": "文档结尾",
+      "group": "系统"
+    },
+    {
+      "keys": "Ctrl+Insert",
+      "action": "复制",
+      "group": "系统"
+    },
+    {
+      "keys": "Ctrl+F4",
+      "action": "关闭活动文档",
+      "group": "系统"
+    },
+    {
+      "keys": "Ctrl+Alt+Tab",
+      "action": "切换器常开",
+      "group": "系统"
     }
   ]
 }

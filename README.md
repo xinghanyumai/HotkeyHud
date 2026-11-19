@@ -56,11 +56,11 @@ src/HotkeyHud.App/
   Shell/ShellController.cs       外壳编排：配置 → HudApp → 托盘
   UI/OverlayForm.cs           分层覆盖窗：窗口、DIB、分层合成
   UI/HudPanel.cs              面板布局与绘制（不碰 HWND），尺寸按内容算
-  Data/apps/*.json            5 份应用档案，随 exe 输出
+  Data/apps/*.json            6 份应用档案 + _system.json（系统快捷键），随 exe 输出
   Diagnostics/                自检、集成测试、渲染画廊，仅 Debug 构建编译
   HudApp.cs                   编排：Raw Input → 状态机 → 覆盖窗
   Program.cs                  入口 + 严格参数解析 + 崩溃日志
-tests/HotkeyHud.Tests/        §7 的 15 条规则用例 + Case16
+tests/HotkeyHud.Tests/        §7 的 16 条规则用例 + Case17
 ```
 
 ## 构建与运行
@@ -102,6 +102,12 @@ dotnet run --project src/HotkeyHud.App -- --paging-test --out=<目录>
 dotnet run --project src/HotkeyHud.App -- --hook-probe
 dotnet run --project src/HotkeyHud.App -- --make-icon --out=<目录>
 
+# 附：诊断日志（判定链逐条落盘到 %TEMP%\hotkeyhud-show.log，Release 不输出）
+dotnet run --project src/HotkeyHud.App -- --diag
+
+# 附：整屏截图（PerMonitorV2，物理像素；面板叠在真实应用上的证据靠它）
+dotnet run --project src/HotkeyHud.App -- --screen-shot=%TEMP%\shot.png
+
 # ⑧ S1 回归门禁：覆盖窗四条硬指标 + Raw Input 通路 + 内存三口径
 dotnet run --project src/HotkeyHud.App -- --selftest
 
@@ -110,8 +116,9 @@ dotnet run --project src/HotkeyHud.App -- --typing-test --seconds=60
 ```
 
 全部以退出码表示失败数（0 = 全部通过）。`--selftest` / `--integration-test` / `--render-gallery` /
-`--suppression-test` / `--typing-test` / `--demo` 只在 Debug 构建存在，Release 下传入会以退出码 2
-报错；未知参数与空格分隔的 `--capture path` 同样报错退出，不会静默忽略。
+`--suppression-test` / `--typing-test` / `--paging-test` / `--diag` / `--screen-shot` / `--demo`
+只在 Debug 构建存在，Release 下传入会以退出码 2 报错；未知参数与空格分隔的 `--capture path`
+同样报错退出，不会静默忽略。
 
 **`--integration-test` / `--suppression-test` / `--shell-test` 会抢前台**：它们自己创建窗口并 `SetForegroundWindow`，
 运行期间不要操作电脑，否则用例会以「无法把目标窗口切到前台」失败。
@@ -157,11 +164,19 @@ S1 立下的规矩是「不监听、不拦截、不抢焦点」。S7 起有**一
 
 | 应用 | 文档 URL | 核对日期 | 核对人 | 条数 |
 |---|---|---|---|---|
-| Word | https://support.microsoft.com/en-us/office/keyboard-shortcuts-in-word-95ef89dd-7142-4b50-afb2-f762f663ceb2 | 2026-11-12 | 执行 Agent | 15 |
-| Chrome | https://support.google.com/chrome/answer/157179?hl=en&co=GENIE.Platform%3DDesktop | 2026-11-12 | 执行 Agent | 15 |
-| VS Code | https://code.visualstudio.com/docs/reference/default-keybindings | 2026-11-12 | 执行 Agent | 23 |
-| 文件资源管理器 | https://support.microsoft.com/en-us/windows/keyboard-shortcuts-in-windows-dcc61a57-8ff0-cffe-9796-cb9706c75eec | 2026-11-12 | 执行 Agent | 8 |
-| 记事本 | 同上页面的「Text editing shortcuts」章节（微软未提供记事本专属快捷键页） | 2026-11-12 | 执行 Agent | 9 |
+| Word | https://support.microsoft.com/en-us/office/keyboard-shortcuts-in-word-95ef89dd-7142-4b50-afb2-f762f663ceb2 | 2026-11-19 | 执行 Agent | 27 |
+| Chrome | https://support.google.com/chrome/answer/157179?hl=en&co=GENIE.Platform%3DDesktop | 2026-11-19 | 执行 Agent | 21 |
+| Edge | https://support.microsoft.com/zh-cn/microsoft-edge/microsoft-edge-键盘快捷方式-d356f99b-7fb4-7a30-f837-c5a35fd7cd1d | 2026-11-19 | 执行 Agent | 28 |
+| VS Code | https://code.visualstudio.com/docs/reference/default-keybindings | 2026-11-19 | 执行 Agent | 27 |
+| 文件资源管理器 | https://support.microsoft.com/en-us/windows/keyboard-shortcuts-in-windows-dcc61a57-8ff0-cffe-9796-cb9706c75eec | 2026-11-19 | 执行 Agent | 17 |
+| 记事本 | 同上页面的「Text editing shortcuts」章节（微软未提供记事本专属快捷键页） | 2026-11-19 | 执行 Agent | 12 |
+| Windows（`_system.json`） | 同上页面 + 「Text editing shortcuts」章节 | 2026-11-19 | 执行 Agent | 52 |
+
+**未收录：微信 / QQ / 网易云音乐 / 豆包。** 这四家都没有公开的快捷键文档页——腾讯客服站
+（`kf.qq.com`）只有聊天记录、登录、账号类条目，网易云与豆包同样没有官方键位表；网上能找到的
+全是第三方教程（百度经验/知乎/下载站），按「禁止凭印象写键位」的规矩不能作为来源。
+它们现在走未收录空态引导（见下）。若要把它们收录进来，唯一可信来源是应用内
+`设置 → 快捷键` 面板——需要一次人工抄录或截图核对。
 
 核对方式与已知限制：
 
@@ -171,8 +186,68 @@ S1 立下的规矩是「不监听、不拦截、不抢焦点」。S7 起有**一
 - **记事本**：微软已不再维护「Keyboard shortcuts in apps」独立页（原链接跳回 Windows 总览页），
   因此采用该总览页中明确标注适用于文本编辑器的「Text editing shortcuts」表。这些组合在记事本里
   确实生效，但它们**不是记事本专属**，`Ctrl+G 定位行`、`Ctrl+E 查找` 等 Win11 新增项未收录。
-- 档案里只放**纯 Ctrl 单修饰键**的组合：`Ctrl+Shift+X` 之类双修饰键条目在 Ctrl 面板里本来就不显示，
-  收录进去只会虚增条数。
+- **§3.2 v1.5 起匹配规则是「包含」**：`Ctrl+Shift+X` 这类双修饰键条目会出现在 Ctrl 面板里，
+  键帽只显示去掉触发修饰键后的部分（`Ctrl+Shift+K` → `Shift+K`）。因此档案收录完整组合，不再只收单修饰键。
+- **Edge**：官方页给的是 Windows/Mac 合并表，只取 Windows 列；`Ctrl + 加号` 在档案里写作 `Ctrl+=`
+  （键位解析器只认字符键，`Plus` 不是合法键名）。
+- **系统档案 `_system.json` 用 `processNames: ["*"]` 通配**，不计入 `ProfileCount`；
+  应用档案已有同一组合时按组合去重，不会出现两个同名键帽。
+
+### 未收录应用的空态
+
+`HudModel.HasProfile == false`（前台进程没有任何档案）时，面板**不再**拿系统档案里零星几条
+Ctrl 条目冒充内容，而是给四行引导：
+
+```
+未收录 豆包.exe
+这个应用还没有快捷键档案
+· 按 Win 查看系统快捷键
+· 在 Data/apps 添加档案（见 README）
+```
+
+例外：**Win 面板仍然显示系统快捷键**——那本来就是它的全部内容，引导语里「按 Win 查看」也才有落点。
+已收录应用但该修饰键下没有条目时，仍显示原来那句「该应用没有 X 组合的快捷键数据」。
+
+### 已知限制：不支持 Fn
+
+**这是硬件限制，不是实现缺陷，明确不做。**
+
+`Fn` 由键盘固件 / 嵌入式控制器在硬件层处理，它改变的是键盘上报的扫描码，本身**不产生任何按键事件**：
+
+- Windows 没有 `Fn` 的虚拟键码
+- `WH_KEYBOARD_LL` 收不到它，Raw Input 也收不到
+- 微软自家的 PowerToys Keyboard Manager 同样不支持重映射 Fn
+- `Fn+F1` 与 `F1` 在多数键盘上报同一个扫描码，无法区分
+
+面板的触发条件是「检测到修饰键按下」，而 Fn 永远不产生这个信号，所以加进去也永远不显示——
+**代码里不预留任何 Fn 占位**，预留只会让人以为将来能填。将来若再提这个需求，引用本节结论，
+不要重新调研。
+
+`Fn` 组合的实际效果会以标准媒体键到达（音量 `0xAF/0xAE/0xAD`、播放 `0xB3`、上下曲 `0xB1/0xB0`），
+但这些是**单键**，不符合「长按修饰键触发面板」的模型，需要单独设计入口，不在当前范围。
+
+### 诊断日志（`--diag`）
+
+排查「某个应用里长按没反应」时用它：每条判定链写一行到 `%TEMP%\hotkeyhud-show.log`，
+只观察、不改判定，**Release 构建不输出**（`Write` 标了 `[Conditional("DEBUG")]`，调用点整体消失）。
+
+```
+[17:53:03.925] stage=mod  | key=Ctrl | down=true | state=Idle | processName=WINWORD.EXE | held=None | blocked=false | suppressed=false | nowMs=8263
+[17:53:04.351] stage=show | processName=WINWORD.EXE | profileHit=true | modifier=Ctrl | total=38 | pageCount=4 | suppressed=false | reason=- | armedAt=8263 | nowMs=8697 | elapsedSinceArm=434 | overlayRect=1020,1356,2100,1904
+[17:53:05.140] stage=hide | processName=WINWORD.EXE | state=Idle
+```
+
+| 日志特征 | 结论 |
+|---|---|
+| 一行都没有（连 `stage=beat` 都没有） | 程序没跑，或没带 `--diag` |
+| 有 `beat`、没有 `mod` | Raw Input 没收到键：前台进程完整性级别高于 HUD（看 `fg` 行的 `uipiBlocked`） |
+| 有 `mod`、没有 `show` | 状态机没到阈值，或被 `blocked` / `suppressed` 挡住 |
+| `profileHit=false` | 档案没匹配上（进程名不匹配） |
+| `total=0` | 匹配上了但该修饰键下没有条目 |
+| `overlayRect` 为空或在屏幕外 | 定位/尺寸算错 |
+
+`stage` 取值：`start`（启动参数与自身完整性级别）、`beat`（60 秒心跳）、`fg`（前台切换，
+会清空 held）、`mod`/`nonmod`（按键）、`after-key`（按键后的状态机快照）、`show`、`hide`。
 
 ### 实测结果（2026-11-12，Windows 10/11 x64，屏幕 3120×2080）
 
@@ -209,7 +284,7 @@ $ dotnet run --project src/HotkeyHud.App -- --integration-test
 --- 通过 10，失败 0 ---
 
 $ dotnet run --project src/HotkeyHud.App -- --render-gallery --out=<目录>
-[PASS] Gallery01 5 份档案可加载 — ProfileCount = 5，Dropped = 0，LoadErrors = 0
+[PASS] Gallery01 6 份档案可加载 — ProfileCount = 6，Dropped = 0，LoadErrors = 0
 [PASS] Gallery02 正常态截图 — 01-normal.png 1080×604，10 条
 [PASS] Gallery03 高亮态截图 — 02-highlight.png 1080×604，10 条
 [PASS] Gallery04 空态截图 — 03-empty.png 1080×216，0 条
@@ -331,8 +406,9 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
    剩下的 420×180 硬编码只服务 S1 自检（它需要一个可预期的参照物来断言「窗口几何 = 请求的几何」）。
 9. **高亮竖条画在命中格子的左缘，不是面板左缘**：3 列布局下一行有 3 个条目，画在面板边缘会让人
    分不清命中的是哪一个。行背景提亮仍按 §6.1 铺满整行。
-10. **DPI 取系统 DPI（进程默认 SystemAware）**：Per-Monitor V2 与跨屏翻转定位属 §6 增强项，留 S6。
-11. **列内流式多加一条约束：组名不得落在列底**（S3.5 时的临时做法，已被 §6.1 v1.2 取代）。
+10. **DPI 已改 PerMonitorV2**（S6）：面板按「光标所在屏」的 DPI 算尺寸、按该屏工作区定位；
+    副屏截图未验证（本机单屏），定位/缩放用合成双屏做了纯函数断言。
+11. **锚定在「显示时」定一次，只有跨屏才重锚**（S6 整改）：同屏内移动光标不再上下跳。
 12. **布局 v1.3 用「最短列优先」，组的阅读顺序不再是从左到右**：VS Code 面板里「视图」会被填进
     第 1 列（因为那一刻它最短），于是列序是 导航+视图 / 编辑 / 编辑（续）+查找。
     这是「三列高度差 ≤ 2 行」的直接代价——想同时满足顺序与平衡，只能减少条目或加列。
@@ -340,10 +416,18 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
     `SHQueryUserNotificationState` 返回 2，D1 先命中，那个开关按下去没反应。
     **规则保留、开关删除**——暴露一个「按了没反应」的开关比没有开关更糟，
     而 D5 在 QUNS 不上报全屏的显示器/系统组合下仍可能独立生效。
-14. **单实例优先用 `Global\` 互斥量，建不出来就退到 `Local\`**：`Global\` 命名对象在部分权限
-    配置下需要 `SeCreateGlobalPrivilege`，直接抛会炸掉启动路径。多用户各跑一份可以接受。
-15. **配置越界按「损坏」处理**：`dwellMs` 不在 80–5000、`knownShortcuts` 里有解析不了的组合，
-    都走改名 + 默认值的路径，而不是静默钳制。钳制会让用户以为改生效了。
+14. **单实例只用 `Local\`**（S6 整改）：本工具是每用户每会话的——配置在 `%APPDATA%`、
+    Raw Input 只收本会话输入、托盘图标属于本用户。快速用户切换时两人各应有一份 HUD，
+    全局单实例反而是 bug；顺带省掉 `SeCreateGlobalPrivilege` 这条权限失败路径。
+15. **配置越界改为钳制 + 气泡**（S6 整改）：`dwellMs` 越界只钳到边界并保留其它字段，
+    气泡说明改成了什么。JSON 语法错 / 类型错 / 组合解析不了仍走损坏流程。
+16. **未收录应用不再显示系统档案的零星条目**（S7 返工 §3.2）：Ctrl 面板只显示引导，
+    不再用 1–3 条数据假装有内容。Win 面板例外，仍显示系统快捷键。见 [SPEC-GAP] 14。
+17. **系统档案与应用档案按组合去重**：新增 10 条系统 Ctrl 条目后，Word 的 `Ctrl+Backspace`
+    与系统档案同名条目会各占一格；`HudBuilder` 现在先收应用条目，再收系统里没有重复的组合。
+18. **`_system.json` 不计入 `ProfileCount`**：它用 `processNames: ["*"]` 通配，单独收在
+    `ShortcutRepository.SystemProfile`，所以画廊的「6 份档案」断言仍成立。
+19. **不支持 Fn**：硬件限制，见「已知限制：不支持 Fn」，代码里不留占位。
 
 非偏差，但需要记录的实现决定：
 
@@ -380,6 +464,8 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 | 11 | §6.1 面板高度门槛 | S3.5 的「≤260 逻辑 px」是拍脑袋写的（只是「12 条 4 行」的推算），与 v1.2 组块不可跨列互斥 | v1.3 已换成 `min(320, 屏高 × 30%)`，此缺口关闭；实测 248 px（上限 298） |
 | 12 | §2.1 `GameRules.ExtraProcessNames` | S4 提示词写的是 `ExtraProcessNames`，但 S2 锁定的契约字段名是 `GameProcessNames`，且 S4 禁止改 `GameClassifier` | 保留 `GameProcessNames`，不新增同义字段 |
 | 13 | §2.2 D5 与 D1 的关系 | 真机实测任何铺满屏幕的窗口都让 QUNS 报 2，D1 先命中，D5 不会独立触发 | v1.3 已删 `TreatBorderlessFullscreenAsGame`、D5 恒开，此缺口关闭 |
+| 14 | §3.2「未收录应用 + 系统档案兜底」 vs S7 返工 §3.2「不要用 1 条数据假装有内容」 | 两条直接冲突：兜底必然给出零星条目 | 非 Win 修饰键一律走引导空态（`TotalCount=0`、`HasProfile=false`）；Win 面板仍显示系统档案，引导语「按 Win 查看系统快捷键」才有落点 |
+| 15 | 需求「支持 Fn 快捷键」 | 物理上不可实现（Fn 不产生任何按键事件） | 明确不做，代码不留占位；README「已知限制」记录原因与替代方案 |
 
 ## 进度
 
@@ -393,5 +479,6 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 | S4 游戏抑制接入 | 通过（含 2 项整改） |
 | S5 托盘 / 配置 / 自启 | 通过（含 2 项整改） |
 | S6 打磨（混合 DPI / 上缘翻转 / 淡入） | 通过（含 2 项整改） |
-| S7 覆盖度 + 分页 | 完成（单元 17/17，分页 6/6，钩子前提实验结论 B） |
+| S7 覆盖度 + 分页 | 通过（含 1 项返工） |
+| S7 返工（诊断日志 / 空态引导 / 系统档案 / Edge） | 完成（Word 未复现原故障，证据见交付说明） |
 | 发布准备（签名 / 安装包 / 用户 README） | 未开始 |
