@@ -95,6 +95,21 @@ internal static class Program
             {
                 return RunDemo(options.Capture);
             }
+
+            // 整屏截图：供人工/自动化拍「面板叠在真实应用上」的证据。
+            // 本进程带 PerMonitorV2 清单，抓到的才是物理像素，不会像 DPI-unaware 进程那样只拿到左上角。
+            if (options.ScreenShot is { } shotPath)
+            {
+                ApplicationConfiguration.Initialize();
+                ScreenCapture.CaptureTo(SystemInformation.VirtualScreen, shotPath);
+                return 0;
+            }
+
+            // --diag 只是打开诊断日志，然后照常进托盘模式
+            if (options.Diag)
+            {
+                ShowDiagnostics.Enable();
+            }
 #else
             _ = options; // Release 构建下诊断入口已编译剔除
 #endif
@@ -180,7 +195,8 @@ internal static class Program
 
     private sealed record Options(
         bool SelfTest, bool TypingTest, bool IntegrationTest, bool RenderGallery,
-        bool SuppressionTest, bool ShellTest, bool S6Test, bool HookProbe, bool MakeIcon, bool PagingTest, bool ProbeSingleInstance,
+        bool SuppressionTest, bool ShellTest, bool S6Test, bool HookProbe, bool MakeIcon,
+        bool PagingTest, bool ProbeSingleInstance, bool Diag, string? ScreenShot,
         bool Demo, int Seconds, string? Capture, string? Out);
 
     private static Options ParseOptions(string[] args)
@@ -196,6 +212,8 @@ internal static class Program
         bool makeIcon = false;
         bool pagingTest = false;
         bool probeSingleInstance = false;
+        bool diag = false;
+        string? screenShot = null;
         bool demo = false;
         int seconds = 30;
         string? capture = null;
@@ -260,6 +278,11 @@ internal static class Program
                     probeSingleInstance = true;
                     break;
 
+                case "--diag":
+                    RequireDiagnosticsBuild(arg);
+                    diag = true;
+                    break;
+
                 case "--demo":
                     RequireDiagnosticsBuild(arg);
                     demo = true;
@@ -285,6 +308,16 @@ internal static class Program
 
                         capture = capturePath;
                     }
+                    else if (TryReadValue(arg, "--screen-shot", out string? shotPath))
+                    {
+                        RequireDiagnosticsBuild(arg);
+                        if (string.IsNullOrWhiteSpace(shotPath))
+                        {
+                            throw new ArgumentException("--screen-shot 需要非空路径");
+                        }
+
+                        screenShot = shotPath;
+                    }
                     else if (TryReadValue(arg, "--out", out string? outputPath))
                     {
                         RequireDiagnosticsBuild(arg);
@@ -299,7 +332,7 @@ internal static class Program
                     {
                         throw new ArgumentException(
                             $"未知参数 \"{arg}\"。可用：--selftest --typing-test --integration-test "
-                            + "--render-gallery --suppression-test --shell-test --s6-test --hook-probe --make-icon --paging-test --demo "
+                            + "--render-gallery --suppression-test --shell-test --s6-test --hook-probe --make-icon --paging-test --diag --screen-shot=PATH --demo "
                             + "--seconds=N --capture=PATH --out=DIR"
                             + "（注意值必须用 = 连接）");
                     }
@@ -309,7 +342,7 @@ internal static class Program
         }
 
         return new Options(selfTest, typingTest, integrationTest, renderGallery, suppressionTest,
-            shellTest, s6Test, hookProbe, makeIcon, pagingTest, probeSingleInstance, demo, seconds, capture, output);
+            shellTest, s6Test, hookProbe, makeIcon, pagingTest, probeSingleInstance, diag, screenShot, demo, seconds, capture, output);
     }
 
     /// <summary>只接受 <c>--name=value</c>；空格分隔形式一律落到「未知参数」分支报错。</summary>

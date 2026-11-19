@@ -65,6 +65,18 @@ public sealed class TriggerStateMachine
 
     public Combo? FlashedCombo { get; private set; }
 
+    /// <summary>
+    /// 本次 Armed 的起始时间戳（与 <see cref="OnTick"/> 同一时钟）。
+    /// 只读暴露给诊断日志算 <c>elapsedSinceArm</c>，不参与任何判定。
+    /// </summary>
+    public long ArmedAtMs => _armedAtMs;
+
+    /// <summary>当前按住的修饰键集合。诊断用，不参与判定。</summary>
+    public Modifier HeldModifiers => _heldModifiers;
+
+    /// <summary>是否处于「等全部松开」的阻塞态。诊断用，不参与判定。</summary>
+    public bool IsBlocked => _blockedUntilRelease;
+
     /// <summary>置 true 立即收起；为 true 期间不接受新的长按。</summary>
     public bool Suppressed
     {

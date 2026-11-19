@@ -71,6 +71,18 @@ public sealed class HudApp : IDisposable
 
         RefreshSuppression();
         _suppressTimer.Start();
+
+        if (ShowDiagnostics.Enabled)
+        {
+            int own = IntegrityLevel.OfCurrentProcess();
+            ShowDiagnostics.Write(
+                "start",
+                ("pid", Environment.ProcessId.ToString()),
+                ("integrity", $"{IntegrityLevel.Name(own)}(0x{own:X})"),
+                ("profiles", _repository.ProfileCount.ToString()),
+                ("dwellMs", Config.DwellMs.ToString()),
+                ("log", ShowDiagnostics.LogPath));
+        }
     }
 
     public RawInputSource Input => _input;
@@ -169,7 +181,19 @@ public sealed class HudApp : IDisposable
     {
         if (evt.Kind == InputKind.Key)
         {
+            LogKey(evt);
             _machine.OnKey(new KeyEvent(evt.Code, evt.IsDown, evt.TimestampMs));
+
+            if (ShowDiagnostics.Enabled)
+            {
+                ShowDiagnostics.Write(
+                    "after-key",
+                    ("state", _machine.State.ToString()),
+                    ("held", _machine.HeldModifiers.ToString()),
+                    ("blocked", _machine.IsBlocked.ToString().ToLowerInvariant()),
+                    ("suppressed", _machine.Suppressed.ToString().ToLowerInvariant()),
+                    ("timerRunning", _timer.Enabled.ToString().ToLowerInvariant()));
+            }
         }
         else
         {
@@ -179,16 +203,84 @@ public sealed class HudApp : IDisposable
         SyncTimer();
     }
 
+    /// <summary>
+    /// 诊断日志：记录修饰键与非修饰键的按下。这一段只观察——
+    /// 「有没有 mod 行」就是「Raw Input 有没有收到」的判据。
+    /// </summary>
+    private void LogKey(InputEvent evt)
+    {
+        if (!ShowDiagnostics.Enabled)
+        {
+            return;
+        }
+
+        Modifier modifier = KeyNames.ModifierOf(evt.Code);
+        if (modifier == Modifier.None)
+        {
+            ShowDiagnostics.Write(
+                "nonmod",
+                ("vk", $"0x{evt.Code:X2}"),
+                ("down", evt.IsDown.ToString().ToLowerInvariant()),
+                ("state", _machine.State.ToString()),
+                ("processName", _probe.ProcessName));
+            return;
+        }
+
+        ShowDiagnostics.Write(
+            "mod",
+            ("key", modifier.ToString()),
+            ("down", evt.IsDown.ToString().ToLowerInvariant()),
+            ("state", _machine.State.ToString()),
+            ("processName", _probe.ProcessName),
+            ("held", _machine.HeldModifiers.ToString()),
+            ("blocked", _machine.IsBlocked.ToString().ToLowerInvariant()),
+            ("suppressed", _machine.Suppressed.ToString().ToLowerInvariant()),
+            ("nowMs", evt.TimestampMs.ToString()));
+    }
+
     private void OnForegroundChanged()
     {
         _probe.Invalidate();
         _suppressionProbe.Invalidate();
+
+        // 前台切换会清空 heldModifiers（S2.5 整改）。若某个应用频繁触发前台事件，
+        // 长按就永远攒不满阈值——这条日志是唯一能看出该现象的地方。
+        if (ShowDiagnostics.Enabled)
+        {
+            int fg = IntegrityLevel.OfForeground();
+            int own = IntegrityLevel.OfCurrentProcess();
+            ShowDiagnostics.Write(
+                "fg",
+                ("processName", _probe.ProcessName),
+                ("state", _machine.State.ToString()),
+                ("heldCleared", "true"),
+                ("fgIntegrity", IntegrityLevel.Name(fg)),
+                ("uipiBlocked", (fg > own && own != 0).ToString().ToLowerInvariant()));
+        }
+
         _machine.OnForegroundChanged();
         SyncTimer();
         RefreshSuppression();
     }
 
-    private void OnSuppressTick(object? sender, EventArgs e) => RefreshSuppression();
+    private int _beatTicks;
+
+    private void OnSuppressTick(object? sender, EventArgs e)
+    {
+        RefreshSuppression();
+
+        // 60 秒一行心跳：日志里有 beat 却没有 mod，说明 Raw Input 没收到键，而不是程序没跑
+        if (ShowDiagnostics.Enabled && ++_beatTicks >= 30)
+        {
+            _beatTicks = 0;
+            ShowDiagnostics.Write(
+                "beat",
+                ("processName", _probe.ProcessName),
+                ("state", _machine.State.ToString()),
+                ("suppressed", _machine.Suppressed.ToString().ToLowerInvariant()),
+                ("foregroundIntegrity", IntegrityLevel.Name(IntegrityLevel.OfForeground())));
+        }
+    }
 
     /// <summary>
     /// 重新采集并判定是否抑制。只在「前台变化」与「2 秒轮询」两个时机调用——
@@ -251,6 +343,7 @@ public sealed class HudApp : IDisposable
     {
         if (_machine.Suppressed)
         {
+            LogShow(modifier, suppressed: true, model: null);
             return;
         }
 
@@ -258,6 +351,40 @@ public sealed class HudApp : IDisposable
         _pageIndex = 0;
         _shownAtMs = _input.NowMs;
         BuildAndRender(modifier);
+        LogShow(modifier, suppressed: false, model: _currentModel);
+    }
+
+    /// <summary>
+    /// 诊断日志：ShowRequested 的完整判定链。字段顺序照 S7 返工文档 §1.1。
+    /// 走到这里说明「状态机已触发」，所以本行存在与否就区分了「没触发」与「触发了但没显示」。
+    /// </summary>
+    private void LogShow(Modifier modifier, bool suppressed, HudModel? model)
+    {
+        if (!ShowDiagnostics.Enabled)
+        {
+            return;
+        }
+
+        string processName = _probe.ProcessName;
+        bool profileHit = _repository.FindByProcess(processName) is not null;
+        Rectangle rect = _overlay.LastBounds;
+        string rectText = rect.IsEmpty
+            ? "none"
+            : $"{rect.Left},{rect.Top},{rect.Right},{rect.Bottom}";
+
+        ShowDiagnostics.Write(
+            "show",
+            ("processName", processName.Length > 0 ? processName : "(空)"),
+            ("profileHit", profileHit.ToString().ToLowerInvariant()),
+            ("modifier", modifier.ToString()),
+            ("total", (model?.TotalCount ?? -1).ToString()),
+            ("pageCount", (model?.PageCount ?? -1).ToString()),
+            ("suppressed", suppressed.ToString().ToLowerInvariant()),
+            ("reason", SuppressReason.Length > 0 ? SuppressReason : "-"),
+            ("armedAt", _machine.ArmedAtMs.ToString()),
+            ("nowMs", _input.NowMs.ToString()),
+            ("elapsedSinceArm", (_input.NowMs - _machine.ArmedAtMs).ToString()),
+            ("overlayRect", rectText));
     }
 
     private void BuildAndRender(Modifier modifier)
@@ -351,6 +478,14 @@ public sealed class HudApp : IDisposable
 
     private void OnHideRequested()
     {
+        if (ShowDiagnostics.Enabled)
+        {
+            ShowDiagnostics.Write(
+                "hide",
+                ("processName", _probe.ProcessName),
+                ("state", _machine.State.ToString()));
+        }
+
         _overlay.HideOverlay();
         IsOverlayVisible = false;
         HighlightedCombo = null;

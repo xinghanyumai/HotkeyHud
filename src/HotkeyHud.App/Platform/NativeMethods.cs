@@ -358,6 +358,25 @@ internal static class NativeMethods
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool CloseHandle(IntPtr hObject);
 
+    // ---------- 完整性级别（仅诊断用：判断 UIPI 会不会掐掉 Raw Input）----------
+    public const uint TOKEN_QUERY = 0x0008;
+    public const int TokenIntegrityLevel = 25;
+
+    [DllImport("kernel32.dll")]
+    public static extern IntPtr GetCurrentProcess();
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool OpenProcessToken(IntPtr processHandle, uint desiredAccess, out IntPtr tokenHandle);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool GetTokenInformation(
+        IntPtr tokenHandle, int tokenInformationClass, IntPtr information, uint length, out uint returnLength);
+
+    [DllImport("advapi32.dll", SetLastError = true)]
+    public static extern IntPtr GetSidSubAuthority(IntPtr sid, uint subAuthorityIndex);
+
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool SetForegroundWindow(IntPtr hWnd);
