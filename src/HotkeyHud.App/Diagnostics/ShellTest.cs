@@ -50,6 +50,7 @@ internal static class ShellTest
         Case("Shell10 适配器与模板：VS Code / JetBrains / 模板可被加载", AdaptersAndTemplate);
         Case("Shell11 钩子只对按下翻页（flags 偏移 8）", HookFlagsParsed);
         Case("Shell12 设置页：只读展示 / 按键录入 / 内置转用户副本 / 颜色", SettingsPageWorks);
+        Case("Shell13 首次引导只弹一次", FirstRunTipOnce);
 
         return Flush();
     }
@@ -345,6 +346,29 @@ internal static class ShellTest
                 // 清理失败不影响结论
             }
         }
+    }
+
+    private static string FirstRunTipOnce()
+    {
+        using var configDir = new TempDir();
+        using var appsDir = new TempDir();
+
+        // 第一次：没有标记位 → 必须弹一次并写回标记
+        using (var first = new ShellController(configDir.Path, appsDir.Path))
+        {
+            Require(first.TrayIconForTest.BalloonCount == 1,
+                $"首次启动应弹 1 次气泡，实际 {first.Tray.BalloonCount} 次");
+            Require(first.Config.FirstRunTipShown, "首次启动后应把标记位写进配置");
+        }
+
+        // 第二次：标记位已在 → 不再弹
+        using (var second = new ShellController(configDir.Path, appsDir.Path))
+        {
+            Require(second.TrayIconForTest.BalloonCount == 0,
+                $"第二次启动不应再弹，实际 {second.Tray.BalloonCount} 次");
+        }
+
+        return "首次弹 1 次并写回标记；第二次 0 次";
     }
 
     private static string HookFlagsParsed()

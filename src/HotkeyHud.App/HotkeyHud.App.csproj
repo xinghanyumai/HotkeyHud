@@ -21,6 +21,10 @@
     <!-- §6 v1.4：Per-Monitor V2。SystemAware 下副屏会被系统虚拟化，字会糊 -->
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <ApplicationIcon>app.ico</ApplicationIcon>
+    <!-- 版本号写进程序集：用户报问题时能直接说版本（托盘 tooltip 也显示） -->
+    <Version>1.0.0</Version>
+    <FileVersion>1.0.0.0</FileVersion>
+    <Product>HotkeyHud</Product>
   </PropertyGroup>
 
 </Project>

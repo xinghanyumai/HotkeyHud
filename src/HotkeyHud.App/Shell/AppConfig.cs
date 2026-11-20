@@ -24,11 +24,27 @@ public sealed class AppConfig
     /// <summary>与注册表 HKCU\...\Run 的实际状态保持同步。</summary>
     public bool StartWithWindows { get; init; }
 
+    /// <summary>
+    /// 首次运行引导是否已经弹过。用标记位而不是「配置文件是否存在」：
+    /// 用户可能删了配置但用过，那时不该再弹。
+    /// </summary>
+    public bool FirstRunTipShown { get; init; }
+
     public AppConfig With(bool startWithWindows) => new()
     {
         DwellMs = DwellMs,
         KnownShortcuts = KnownShortcuts,
         ExtraGameProcesses = ExtraGameProcesses,
         StartWithWindows = startWithWindows,
+        FirstRunTipShown = FirstRunTipShown,
+    };
+
+    public AppConfig WithFirstRunTipShown() => new()
+    {
+        DwellMs = DwellMs,
+        KnownShortcuts = KnownShortcuts,
+        ExtraGameProcesses = ExtraGameProcesses,
+        StartWithWindows = StartWithWindows,
+        FirstRunTipShown = true,
     };
 }

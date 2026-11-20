@@ -48,6 +48,15 @@ public sealed class ShellController : IDisposable
             // 钳制必须说出来，否则用户会以为改生效了
             _tray.ShowBalloon("配置已修正", string.Join("；", _store.LastRepairs), warning: true);
         }
+        else if (!_config.FirstRunTipShown)
+        {
+            // 首次运行引导：只弹一次，用配置里的标记位（删了配置也不会再弹第二次）
+            _tray.ShowBalloon(
+                "HotkeyHud 已在托盘运行",
+                "按住 Ctrl 或 Alt 查看当前应用的快捷键。托盘图标可能被折叠到「隐藏的图标」里。");
+            _config = _config.WithFirstRunTipShown();
+            _store.Save(_config);
+        }
     }
 
     public event Action? ExitRequested;
@@ -55,6 +64,9 @@ public sealed class ShellController : IDisposable
     public HudApp Hud => _hud;
 
     public AppConfig Config => _config;
+
+    /// <summary>托盘（验收用：气泡数、菜单项）。</summary>
+    public TrayIcon TrayIconForTest => _tray;
 
     public ConfigStore Store => _store;
 
@@ -244,7 +256,30 @@ public sealed class ShellController : IDisposable
             autoStart: AutoStart.IsEnabled());
     }
 
-    private void RequestExit() => ExitRequested?.Invoke();
+    private void RequestExit()
+    {
+        // 退出前必须让用户知道「开机自启」还开着——否则下次开机它又起来了，用户以为是 bug
+        if (_config.StartWithWindows)
+        {
+            DialogResult answer = MessageBox.Show(
+                "开机自启仍开启，退出后下次开机还会自动启动。\n\n要同时关闭开机自启吗？",
+                "HotkeyHud",
+                MessageBoxButtons.YesNoCancel,
+                MessageBoxIcon.Question);
+
+            if (answer == DialogResult.Cancel)
+            {
+                return;
+            }
+
+            if (answer == DialogResult.Yes)
+            {
+                SetAutoStart(false);
+            }
+        }
+
+        ExitRequested?.Invoke();
+    }
 
     public void Dispose()
     {

@@ -60,6 +60,9 @@ public sealed class TrayIcon : IDisposable
         };
     }
 
+    /// <summary>已弹出的气泡数（验收「首次引导只弹一次」用）。</summary>
+    public int BalloonCount { get; private set; }
+
     /// <summary>菜单即将弹出时触发，让外层把最新状态推过来。</summary>
     public event Action? RefreshRequested;
 
@@ -87,11 +90,14 @@ public sealed class TrayIcon : IDisposable
         _statusItem.Text = $"{state} · 前台 {foreground}";
         _pauseItem.Text = paused ? "恢复" : "暂停";
         _autoStartItem.Checked = autoStart;
-        _notifyIcon.Text = $"HotkeyHud · {state}";
+        // ProductVersion 带 "+<git sha>"（SourceLink 加的），tooltip 只留版本号
+        string version = Application.ProductVersion.Split('+')[0];
+        _notifyIcon.Text = $"HotkeyHud {version} · {state}";
     }
 
     public void ShowBalloon(string title, string text, bool warning = false)
     {
+        BalloonCount++;
         _notifyIcon.BalloonTipTitle = title;
         _notifyIcon.BalloonTipText = text;
         _notifyIcon.BalloonTipIcon = warning ? ToolTipIcon.Warning : ToolTipIcon.Info;

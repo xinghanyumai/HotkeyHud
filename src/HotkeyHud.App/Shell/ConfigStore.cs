@@ -103,6 +103,7 @@ public sealed class ConfigStore
             KnownShortcuts = config.KnownShortcuts?.ToList(),
             ExtraGameProcesses = config.ExtraGameProcesses.ToList(),
             StartWithWindows = config.StartWithWindows,
+            FirstRunTipShown = config.FirstRunTipShown,
         };
 
         File.WriteAllText(FilePath, JsonSerializer.Serialize(document, WriteOptions));
@@ -140,6 +141,7 @@ public sealed class ConfigStore
             KnownShortcuts = document.KnownShortcuts,
             ExtraGameProcesses = document.ExtraGameProcesses ?? new List<string>(),
             StartWithWindows = document.StartWithWindows ?? false,
+            FirstRunTipShown = document.FirstRunTipShown ?? false,
         };
     }
 
@@ -181,6 +183,9 @@ public sealed class ConfigStore
 
         [JsonPropertyName("startWithWindows")]
         public bool? StartWithWindows { get; set; }
+
+        [JsonPropertyName("firstRunTipShown")]
+        public bool? FirstRunTipShown { get; set; }
     }
 
     private sealed class ConfigCorruptException : Exception
