@@ -32,6 +32,9 @@ internal static class Cases
         Program.Run("Case17 默认长按阈值为 450ms", Case17_DefaultDwellIs450);
         Program.Run("Case18 未收录应用：非 Win 走引导，Win 仍显示系统档案", Case18_UnrecordedGuidance);
         Program.Run("Case19 桌面不算游戏（Win+D 后不抑制）", Case19_DesktopNotSuppressed);
+        Program.Run("Case20 用户档案覆盖内置同 keys 条目", Case20_UserOverridesBuiltin);
+        Program.Run("Case21 用户条目不受「通用」降权影响", Case21_UserEntrySkipsDeferral);
+        Program.Run("Case22 用户档案损坏不影响其他档案", Case22_BrokenUserFileIsolated);
     }
 
     // ---------------- §5 状态机 ----------------
@@ -422,6 +425,126 @@ internal static class Cases
 
         Check.Equal(1, shows, "修饰键状态被清空后，重新长按应能弹出");
         Check.Equal(HudState.Visible, sm.State, "应进入 Visible");
+    }
+
+    private static void Case20_UserOverridesBuiltin()
+    {
+        using var builtin = new TempDirectory();
+        using var user = new TempDirectory();
+
+        builtin.Write("test.json", """
+            {
+              "app": "test",
+              "displayName": "测试应用",
+              "processNames": ["TEST.EXE"],
+              "shortcuts": [
+                { "keys": "Ctrl+F", "action": "内置查找", "group": "编辑" },
+                { "keys": "Ctrl+K", "action": "内置链接", "group": "编辑" }
+              ]
+            }
+            """);
+
+        user.Write("test.json", """
+            {
+              "app": "test",
+              "displayName": "测试应用",
+              "processNames": ["TEST.EXE"],
+              "shortcuts": [
+                { "keys": "Ctrl+F", "action": "我的查找", "group": "编辑" },
+                { "keys": "Ctrl+G", "action": "我的跳转", "group": "编辑" }
+              ]
+            }
+            """);
+
+        var repository = new ShortcutRepository(builtin.Path, user.Path);
+        AppShortcutProfile profile = repository.FindByProcess("test.exe")
+            ?? throw new InvalidOperationException("用户档案没有合并进内置档案");
+
+        Check.Equal(3, profile.Shortcuts.Count, "同 keys 应覆盖而不是追加（2 + 1 新增）");
+
+        ShortcutEntry find = profile.Shortcuts.First(e => e.Keys == "Ctrl+F");
+        Check.Equal("我的查找", find.Action, "同 keys 应由用户覆盖");
+        Check.Equal(ShortcutSource.User, find.Source, "覆盖后的条目来源应为 user");
+        Check.Equal(0, profile.Shortcuts.IndexOf(find), "覆盖应保留内置里的位置");
+
+        ShortcutEntry jump = profile.Shortcuts.First(e => e.Keys == "Ctrl+G");
+        Check.Equal(ShortcutSource.User, jump.Source, "新增条目来源应为 user");
+        Check.Equal(1, repository.UserProfileCount, "应统计到 1 份用户档案");
+    }
+
+    private static void Case21_UserEntrySkipsDeferral()
+    {
+        using var builtin = new TempDirectory();
+        using var user = new TempDirectory();
+
+        builtin.Write("test.json", """
+            {
+              "app": "test",
+              "displayName": "测试应用",
+              "processNames": ["TEST.EXE"],
+              "shortcuts": [
+                { "keys": "Ctrl+C", "action": "内置复制", "group": "编辑" },
+                { "keys": "Ctrl+K", "action": "内置链接", "group": "编辑" }
+              ]
+            }
+            """);
+
+        user.Write("test.json", """
+            {
+              "app": "test",
+              "displayName": "测试应用",
+              "processNames": ["TEST.EXE"],
+              "shortcuts": [
+                { "keys": "Ctrl+C", "action": "我的复制", "group": "编辑" }
+              ]
+            }
+            """);
+
+        var repository = new ShortcutRepository(builtin.Path, user.Path);
+        var model = HudBuilder.Build(
+            repository.FindByProcess("test"), Modifier.Ctrl, new KnownShortcutFilter());
+
+        // 用户显式写的 Ctrl+C 留在应用组，不进「通用」
+        Check.Equal(2, model.TotalCount, "两条都应在列表里");
+        Check.Equal(0, model.DeferredKnownCount, "用户条目不应被降权");
+        Check.False(model.Groups.Any(g => g.Title == HudBuilder.GeneralGroupTitle),
+            "不应出现「通用」组");
+        Check.True(model.Groups[0].Items.Any(i => i.Keys == "C" && i.Action == "我的复制"),
+            "用户写的 Ctrl+C 应在应用组内");
+    }
+
+    private static void Case22_BrokenUserFileIsolated()
+    {
+        using var builtin = new TempDirectory();
+        using var user = new TempDirectory();
+
+        builtin.Write("test.json", """
+            {
+              "app": "test",
+              "displayName": "测试应用",
+              "processNames": ["TEST.EXE"],
+              "shortcuts": [ { "keys": "Ctrl+K", "action": "链接", "group": "编辑" } ]
+            }
+            """);
+
+        user.Write("broken.json", "{ this is not json");
+        user.Write("_global.json", """
+            { "app": "global", "displayName": "自定义", "shortcuts": [
+                { "keys": "Ctrl+Alt+G", "action": "我的全局" }
+            ] }
+            """);
+
+        var repository = new ShortcutRepository(builtin.Path, user.Path);
+
+        Check.True(repository.LoadErrors.Count > 0, "损坏的用户档案应记入 LoadErrors");
+        Check.True(repository.FindByProcess("test.exe") is not null, "内置档案不应被损坏文件连累");
+        Check.True(repository.GlobalProfile is not null, "全局档案应加载成功");
+
+        // 全局条目：组名缺省时归入「自定义」，且对任何应用可见
+        var model = HudBuilder.Build(
+            repository.FindByProcess("test"), systemProfile: null, Modifier.Ctrl,
+            new KnownShortcutFilter(), globalProfile: repository.GlobalProfile);
+        Check.True(model.Groups.Any(g => g.Title == "自定义"), "全局条目应归入「自定义」组");
     }
 
     private static void Case19_DesktopNotSuppressed()

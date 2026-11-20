@@ -1,5 +1,6 @@
 using System.Text;
 using HotkeyHud.App.Shell;
+using HotkeyHud.App.Shell.Adapters;
 #if DEBUG
 using HotkeyHud.App.Diagnostics;
 #endif
@@ -98,6 +99,11 @@ internal static class Program
 
             // 整屏截图：供人工/自动化拍「面板叠在真实应用上」的证据。
             // 本进程带 PerMonitorV2 清单，抓到的才是物理像素，不会像 DPI-unaware 进程那样只拿到左上角。
+            if (options.AdapterCheck)
+            {
+                return RunAdapterCheck();
+            }
+
             if (options.ScreenShot is { } shotPath)
             {
                 ApplicationConfiguration.Initialize();
@@ -120,6 +126,41 @@ internal static class Program
             // 坑 #11：WinExe 没有控制台，异常必须落盘，否则表现为「双击没反应」
             WriteStartupLog(ex);
             return 1;
+        }
+    }
+
+    /// <summary>用真实 %APPDATA% 跑一遍适配器，验收「读得出用户改过的键位」用。</summary>
+    private static int RunAdapterCheck()
+    {
+        string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+
+        Check("Code.exe", @"C://Program Files//Microsoft VS Code//Code.exe", appData);
+        Check("idea64.exe", @"C://Program Files//JetBrains//IntelliJ IDEA//bin//idea64.exe", appData);
+        return 0;
+
+        static void Check(string exeName, string exePath, string appData)
+        {
+            if (VsCodeAdapter.Matches(exePath))
+            {
+                bool hit = VsCodeAdapter.TryRead(
+                    exePath, appData, out List<AdapterEntry> entries, out string reason);
+                Console.WriteLine($"[{exeName}] hit={hit} count={entries.Count} reason={reason}");
+                foreach (AdapterEntry entry in entries.Take(3))
+                {
+                    Console.WriteLine($"  {entry.Keys} = {entry.Action}");
+                }
+
+                return;
+            }
+
+            bool jbHit = JetBrainsAdapter.TryRead(
+                exePath, appData, out List<AdapterEntry> jbEntries, out string jbReason, out string product);
+            Console.WriteLine(
+                $"[{exeName}] hit={jbHit} count={jbEntries.Count} product={product} reason={jbReason}");
+            foreach (AdapterEntry entry in jbEntries.Take(3))
+            {
+                Console.WriteLine($"  {entry.Keys} = {entry.Action}");
+            }
         }
     }
 
@@ -196,7 +237,7 @@ internal static class Program
     private sealed record Options(
         bool SelfTest, bool TypingTest, bool IntegrationTest, bool RenderGallery,
         bool SuppressionTest, bool ShellTest, bool S6Test, bool HookProbe, bool MakeIcon,
-        bool PagingTest, bool ProbeSingleInstance, bool Diag, string? ScreenShot,
+        bool PagingTest, bool ProbeSingleInstance, bool Diag, bool AdapterCheck, string? ScreenShot,
         bool Demo, int Seconds, string? Capture, string? Out);
 
     private static Options ParseOptions(string[] args)
@@ -213,6 +254,7 @@ internal static class Program
         bool pagingTest = false;
         bool probeSingleInstance = false;
         bool diag = false;
+        bool adapterCheck = false;
         string? screenShot = null;
         bool demo = false;
         int seconds = 30;
@@ -278,6 +320,11 @@ internal static class Program
                     probeSingleInstance = true;
                     break;
 
+                case "--adapter-check":
+                    RequireDiagnosticsBuild(arg);
+                    adapterCheck = true;
+                    break;
+
                 case "--diag":
                     RequireDiagnosticsBuild(arg);
                     diag = true;
@@ -332,7 +379,7 @@ internal static class Program
                     {
                         throw new ArgumentException(
                             $"未知参数 \"{arg}\"。可用：--selftest --typing-test --integration-test "
-                            + "--render-gallery --suppression-test --shell-test --s6-test --hook-probe --make-icon --paging-test --diag --screen-shot=PATH --demo "
+                            + "--render-gallery --suppression-test --shell-test --s6-test --hook-probe --make-icon --paging-test --diag --adapter-check --screen-shot=PATH --demo "
                             + "--seconds=N --capture=PATH --out=DIR"
                             + "（注意值必须用 = 连接）");
                     }
@@ -342,7 +389,7 @@ internal static class Program
         }
 
         return new Options(selfTest, typingTest, integrationTest, renderGallery, suppressionTest,
-            shellTest, s6Test, hookProbe, makeIcon, pagingTest, probeSingleInstance, diag, screenShot, demo, seconds, capture, output);
+            shellTest, s6Test, hookProbe, makeIcon, pagingTest, probeSingleInstance, diag, adapterCheck, screenShot, demo, seconds, capture, output);
     }
 
     /// <summary>只接受 <c>--name=value</c>；空格分隔形式一律落到「未知参数」分支报错。</summary>

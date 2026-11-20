@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using HotkeyHud.App.Shell.Adapters;
 
 namespace HotkeyHud.App.Shell;
 
@@ -23,8 +24,12 @@ public sealed class ShellController : IDisposable
         _store = new ConfigStore(configDirectory);
         _config = _store.Load().With(AutoStart.IsEnabled());
 
-        _hud = new HudApp(appsDirectory, config: _config);
-        _tray = new TrayIcon(TogglePause, Reload, OpenConfigDirectory, SetAutoStart, RequestExit);
+        _hud = new HudApp(
+            appsDirectory,
+            config: _config,
+            userAppsDirectory: Path.Combine(_store.DirectoryPath, "apps"));
+        _tray = new TrayIcon(
+            TogglePause, AddAppShortcuts, Reload, OpenConfigDirectory, SetAutoStart, RequestExit);
         _tray.RefreshRequested += PushTrayState;
 
         PushTrayState();
@@ -71,6 +76,103 @@ public sealed class ShellController : IDisposable
         if (_store.LastRepairs.Count > 0)
         {
             _tray.ShowBalloon("配置已修正", string.Join("；", _store.LastRepairs), warning: true);
+        }
+    }
+
+    /// <summary>
+    /// 托盘「添加应用快捷键…」（§3.4.3）：选 exe → 试适配器 → 命中就写用户档案，未命中就生成模板。
+    /// 进程名一律从选中的 exe 取，不让用户手写。
+    /// </summary>
+    public void AddAppShortcuts()
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Title = "选择要添加快捷键的应用",
+            Filter = "应用程序 (*.exe)|*.exe",
+            CheckFileExists = true,
+        };
+
+        if (dialog.ShowDialog() != DialogResult.OK)
+        {
+            return;
+        }
+
+        string exe = dialog.FileName;
+        string directory = Path.Combine(_store.DirectoryPath, "apps");
+        string appData = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+
+        try
+        {
+            if (VsCodeAdapter.Matches(exe))
+            {
+                VsCodeAdapter.TryRead(exe, appData, out List<AdapterEntry> entries, out string reason);
+                SaveAdapterResult(directory, exe, entries, VsCodeAdapter.GroupName, "VS Code", reason);
+                return;
+            }
+
+            if (JetBrainsAdapter.Matches(exe))
+            {
+                JetBrainsAdapter.TryRead(
+                    exe, appData, out List<AdapterEntry> entries, out string reason, out string product);
+                string label = product.Length > 0 ? $"JetBrains（{product}）" : "JetBrains";
+                SaveAdapterResult(directory, exe, entries, JetBrainsAdapter.GroupName, label, reason);
+                return;
+            }
+
+            // 没有可读来源：生成模板并打开，明确告诉用户「未匹配」
+            string path = UserApps.WriteTemplate(directory, exe);
+            OpenInEditor(path);
+            _tray.ShowBalloon(
+                "未匹配到自动读取",
+                $"{Path.GetFileName(exe)} 没有可读的快捷键配置，已生成模板：\n{Path.GetFileName(path)}\n"
+                + "填好后点「重载数据」。");
+        }
+        catch (Exception ex)
+        {
+            _tray.ShowBalloon("添加失败", ex.Message, warning: true);
+        }
+        finally
+        {
+            Reload();
+        }
+    }
+
+    private void SaveAdapterResult(
+        string directory,
+        string exe,
+        List<AdapterEntry> entries,
+        string group,
+        string label,
+        string reason)
+    {
+        string path = entries.Count > 0
+            ? UserApps.WriteEntries(directory, exe, entries, group)
+            : UserApps.WriteEntries(directory, exe, Array.Empty<AdapterEntry>(), group);
+
+        if (entries.Count > 0)
+        {
+            _tray.ShowBalloon("已添加", $"从 {label} 读取 {entries.Count} 条自定义键位。");
+            return;
+        }
+
+        // 读到文件但 0 条：这是正确行为（用户没改过键位），不是失败
+        OpenInEditor(path);
+        _tray.ShowBalloon(
+            "没有自定义键位",
+            $"{label}：{reason}\n已建空档案，改过键位后重载即可。",
+            warning: true);
+    }
+
+    private static void OpenInEditor(string path)
+    {
+        try
+        {
+            Process.Start(new ProcessStartInfo(path) { UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            // 打不开编辑器不算失败：文件已经写好了，用户可以自己去配置目录打开
+            Debug.WriteLine($"[HotkeyHud] 打开 {path} 失败：{ex.Message}");
         }
     }
 

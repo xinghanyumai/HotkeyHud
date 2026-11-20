@@ -21,6 +21,7 @@ public sealed class TrayIcon : IDisposable
 
     public TrayIcon(
         Action togglePause,
+        Action addAppShortcuts,
         Action reload,
         Action openConfigDirectory,
         Action<bool> setAutoStart,
@@ -40,6 +41,7 @@ public sealed class TrayIcon : IDisposable
         _menu.Items.Add(_statusItem);
         _menu.Items.Add(new ToolStripSeparator());
         _menu.Items.Add(_pauseItem);
+        _menu.Items.Add(new ToolStripMenuItem("添加应用快捷键…", null, (_, _) => addAppShortcuts()));
         _menu.Items.Add(new ToolStripMenuItem("重载数据", null, (_, _) => reload()));
         _menu.Items.Add(new ToolStripMenuItem("打开配置目录", null, (_, _) => openConfigDirectory()));
         _menu.Items.Add(_autoStartItem);

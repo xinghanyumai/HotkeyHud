@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Text;
 using HotkeyHud.App.Platform;
 using HotkeyHud.App.Shell;
+using HotkeyHud.App.Shell.Adapters;
 using HotkeyHud.Core;
 
 namespace HotkeyHud.App.Diagnostics;
@@ -43,6 +44,8 @@ internal static class ShellTest
         Case("Shell06 配置损坏不崩且留证", CorruptConfigHandled);
         Case("Shell07 开机自启可逆", AutoStartReversible);
         Case("Shell08 单实例跨进程生效", SingleInstanceBlocksSecond);
+        Case("Shell09 用户档案：覆盖内置 / 降权豁免 / 新增生效", UserProfileMerges);
+        Case("Shell10 适配器与模板：VS Code / JetBrains / 模板可被加载", AdaptersAndTemplate);
 
         return Flush();
     }
@@ -51,7 +54,7 @@ internal static class ShellTest
 
     private static string TrayMenuComplete()
     {
-        using var tray = new TrayIcon(() => { }, () => { }, () => { }, _ => { }, () => { });
+        using var tray = new TrayIcon(() => { }, () => { }, () => { }, () => { }, _ => { }, () => { });
 
         tray.Update(paused: false, suppressed: false, reason: "", foreground: "chrome.exe", autoStart: false);
         string normal = tray.StatusText;
@@ -59,12 +62,12 @@ internal static class ShellTest
 
         tray.Update(paused: true, suppressed: true, reason: "手动暂停", foreground: "chrome.exe", autoStart: true);
         string paused = tray.StatusText;
-        Require(actions.Count == 5,
-            $"可点击菜单项应为 5 个（暂停/重载/打开配置/开机自启/退出），实际 {actions.Count}："
+        Require(actions.Count == 6,
+            $"可点击菜单项应为 6 个（暂停/添加应用快捷键/重载/打开配置/开机自启/退出），实际 {actions.Count}："
             + string.Join("、", actions));
-        Require(actions.Contains("暂停") && actions.Contains("重载数据")
-                && actions.Contains("打开配置目录") && actions.Contains("开机自启")
-                && actions.Contains("退出"),
+        Require(actions.Contains("暂停") && actions.Contains("添加应用快捷键…")
+                && actions.Contains("重载数据") && actions.Contains("打开配置目录")
+                && actions.Contains("开机自启") && actions.Contains("退出"),
             $"菜单项不全：{string.Join("、", actions)}");
 
         Require(normal.Contains("正常") && normal.Contains("chrome.exe"),
@@ -73,7 +76,7 @@ internal static class ShellTest
             $"抑制态状态行不对：\"{paused}\"");
         Require(tray.PauseItemText == "恢复", $"暂停后菜单项应显示「恢复」，实际 \"{tray.PauseItemText}\"");
 
-        return $"5 个可点击项 + 状态项；正常=\"{normal}\"，暂停=\"{paused}\"";
+        return $"6 个可点击项 + 状态项；正常=\"{normal}\"，暂停=\"{paused}\"";
     }
 
     private static string PauseWorks()
@@ -160,8 +163,8 @@ internal static class ShellTest
         Require(PumpTracking(500, hud), "前置条件不成立：面板未弹出");
         Require(hud.CurrentLabel.Contains("Ctrl"), $"label 异常：\"{hud.CurrentLabel}\"");
 
-        HudModel? model = hud.CurrentModel;
-        Require(model is not null, "拿不到面板模型");
+        HudModel model = hud.CurrentModel
+            ?? throw new ShellCheckException("拿不到面板模型");
 
         // §4.3 v1.7：名单为空 → 没有任何条目被降权，也就没有「通用」组
         Require(model.DeferredKnownCount == 0,
@@ -184,6 +187,159 @@ internal static class ShellTest
             $"按 Ctrl+C 后未高亮该条：{highlighted?.ToString() ?? "null"}");
 
         return "knownShortcuts=[] 后无「通用」组，Ctrl+C 在应用组内且会高亮";
+    }
+
+    private static string UserProfileMerges()
+    {
+        using Form normal = CreateWindow("HotkeyHud 普通窗口", new Rectangle(40, 40, 520, 200));
+        string processName = Process.GetCurrentProcess().ProcessName;
+
+        using var builtin = new TempDir();
+        using var user = new TempDir();
+
+        builtin.Write("huduser.json", $$"""
+            {
+              "app": "huduser",
+              "displayName": "HudUser",
+              "processNames": ["{{processName}}.EXE"],
+              "shortcuts": [
+                { "keys": "Ctrl+K", "action": "内置链接", "group": "编辑" },
+                { "keys": "Ctrl+F", "action": "内置查找", "group": "编辑" },
+                { "keys": "Ctrl+C", "action": "内置复制", "group": "编辑" }
+              ]
+            }
+            """);
+
+        user.Write("huduser.json", $$"""
+            {
+              "app": "huduser",
+              "displayName": "HudUser",
+              "processNames": ["{{processName}}.EXE"],
+              "shortcuts": [
+                { "keys": "Ctrl+F", "action": "我的查找", "group": "编辑" },
+                { "keys": "Ctrl+C", "action": "我的复制", "group": "编辑" },
+                { "keys": "Ctrl+G", "action": "我的跳转", "group": "编辑" }
+              ]
+            }
+            """);
+
+        using var hud = new HudApp(builtin.Path, userAppsDirectory: user.Path);
+
+        ReleaseAll();
+        FocusWindow(normal.Handle);
+        hud.Suppressed = false;
+
+        KeyDown(VkControl);
+        Require(PumpTracking(500, hud), "前置条件不成立：面板未弹出");
+
+        HudModel model = hud.CurrentModel ?? throw new ShellCheckException("拿不到面板模型");
+        KeyUp(VkControl);
+        Pump(150);
+
+        List<HudItem> items = model.Groups.SelectMany(g => g.Items).ToList();
+
+        Require(items.Any(i => i.Keys == "F" && i.Action == "我的查找"),
+            "同 keys 应被用户档案覆盖（期望「我的查找」）");
+        Require(items.Any(i => i.Keys == "G" && i.Action == "我的跳转"), "用户新增条目没出现");
+        Require(items.Any(i => i.Keys == "C" && i.Action == "我的复制"),
+            "用户写的 Ctrl+C 应保留自己的文案");
+        Require(!model.Groups.Any(g => g.Title == HudBuilder.GeneralGroupTitle),
+            "用户显式写的 Ctrl+C 不应被降权到「通用」组");
+
+        return $"覆盖=F/我的查找，新增=G/我的跳转，Ctrl+C 留在「{model.Groups[0].Title}」组";
+    }
+
+    private static string AdaptersAndTemplate()
+    {
+        using var appData = new TempDir();
+        using var userDir = new TempDir();
+
+        // --- VS Code：用户覆盖层 ---
+        string codeUser = Path.Combine(appData.Path, "Code", "User");
+        Directory.CreateDirectory(codeUser);
+        File.WriteAllText(Path.Combine(codeUser, "keybindings.json"), """
+            [
+              { "key": "ctrl+alt+f", "command": "editor.action.formatDocument" },
+              { "key": "ctrl+k ctrl+s", "command": "workbench.action.files.saveAll" },
+              { "key": "ctrl+alt+x", "command": "-editor.action.deleteLines" },
+              { "key": "ctrl+shift+escape", "command": "workbench.action.terminal.new" }
+            ]
+            """);
+
+        bool vscHit = VsCodeAdapter.TryRead(
+            @"C:/x/Code.exe", appData.Path, out List<AdapterEntry> vscEntries, out string vscReason);
+        Require(vscHit, $"VS Code 适配器应命中：{vscReason}");
+        Require(vscEntries.Count == 2, $"应读到 2 条（多键序列与解绑要跳过），实际 {vscEntries.Count}");
+        Require(vscEntries.Any(e => e.Keys == "Ctrl+Alt+F" && e.Action == "formatDocument"),
+            "ctrl+alt+f 未转成 Ctrl+Alt+F / formatDocument");
+        Require(vscEntries.Any(e => e.Keys == "Ctrl+Shift+Esc"), "ctrl+shift+escape 未转成 Ctrl+Shift+Esc");
+
+        // --- JetBrains：keymap xml ---
+        string idea = Path.Combine(appData.Path, "JetBrains", "IntelliJIdea2024.1", "keymaps");
+        Directory.CreateDirectory(idea);
+        File.WriteAllText(Path.Combine(idea, "my.xml"), """
+            <keymap version="1" name="My">
+              <action id="SaveAll">
+                <keyboard-shortcut first-keystroke="control shift S" />
+              </action>
+              <action id="ReformatCode">
+                <keyboard-shortcut first-keystroke="control alt L" second-keystroke="A" />
+                <keyboard-shortcut first-keystroke="control alt K" />
+              </action>
+            </keymap>
+            """);
+
+        bool jbHit = JetBrainsAdapter.TryRead(
+            @"C:/x/idea64.exe", appData.Path, out List<AdapterEntry> jbEntries, out string jbReason, out string product);
+        Require(jbHit, $"JetBrains 适配器应命中：{jbReason}");
+        Require(product == "IntelliJIdea2024.1", $"产品目录不符：{product}");
+        Require(jbEntries.Count == 2, $"应读到 2 条（两段式跳过），实际 {jbEntries.Count}");
+        Require(jbEntries.Any(e => e.Keys == "Ctrl+Shift+S" && e.Action == "SaveAll"),
+            "control shift S 未转成 Ctrl+Shift+S");
+        Require(jbEntries.Any(e => e.Keys == "Ctrl+Alt+K"), "control alt K 未转成 Ctrl+Alt+K");
+
+        // --- 模板：必须能被仓库原样加载（注释与尾逗号） ---
+        string templatePath = UserApps.WriteTemplate(userDir.Path, @"C://Windows//notepad.exe");
+        Require(File.Exists(templatePath), "模板没写出来");
+        string text = File.ReadAllText(templatePath);
+        Require(text.Contains("//", StringComparison.Ordinal), "模板应带注释");
+        Require(text.Contains("processNames", StringComparison.Ordinal), "模板应带 processNames");
+
+        var repository = new ShortcutRepository(userDir.Path);
+        Require(repository.LoadErrors.Count == 0,
+            $"模板应能被加载，实际报错：{string.Join("；", repository.LoadErrors)}");
+        AppShortcutProfile profile = repository.FindByProcess("notepad")
+            ?? throw new ShellCheckException("模板里的 processNames 没被识别");
+        Require(profile.Shortcuts.Count == 3, $"模板应含 3 条示例，实际 {profile.Shortcuts.Count}");
+
+        return $"VS Code 2 条 / JetBrains 2 条（{product}）/ 模板 3 条可加载";
+    }
+
+    private sealed class TempDir : IDisposable
+    {
+        public TempDir()
+        {
+            Path = System.IO.Path.Combine(
+                System.IO.Path.GetTempPath(), "hotkeyhud-shell-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(Path);
+        }
+
+        public string Path { get; }
+
+        public void Write(string fileName, string content)
+            => File.WriteAllText(System.IO.Path.Combine(Path, fileName), content);
+
+        public void Dispose()
+        {
+            try
+            {
+                Directory.Delete(Path, recursive: true);
+            }
+            catch
+            {
+                // 清理失败不影响结论
+            }
+        }
     }
 
     private static string CorruptConfigHandled()

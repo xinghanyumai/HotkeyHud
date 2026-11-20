@@ -1,8 +1,17 @@
 namespace HotkeyHud.Core;
 
+/// <summary>条目来源。用户显式写的条目不受「通用」降权影响（§3.4.1）。</summary>
+public enum ShortcutSource
+{
+    Builtin,
+    User,
+}
+
 /// <summary>档案里的一条快捷键。<see cref="IsValid"/> 为 false 表示 keys 解析失败，应被丢弃。</summary>
 public sealed class ShortcutEntry
 {
+    public ShortcutSource Source { get; init; } = ShortcutSource.Builtin;
+
     public string Keys { get; init; } = string.Empty;
 
     public string Action { get; init; } = string.Empty;

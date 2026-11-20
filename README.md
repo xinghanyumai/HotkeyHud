@@ -53,6 +53,9 @@ src/HotkeyHud.App/
   Shell/TrayIcon.cs              托盘图标（代码绘制 16×16）与 6 项菜单
   Shell/AutoStart.cs             HKCU Run 写入/删除
   Shell/SingleInstance.cs        单实例互斥
+  Shell/UserApps.cs              用户档案模板与写入（%APPDATA%\HotkeyHud\apps）
+  Shell/Adapters/VsCodeAdapter.cs     读 keybindings.json（只读用户改过的键位）
+  Shell/Adapters/JetBrainsAdapter.cs  读 keymaps/*.xml（只取 first-keystroke）
   Shell/ShellController.cs       外壳编排：配置 → HudApp → 托盘
   UI/OverlayForm.cs           分层覆盖窗：窗口、DIB、分层合成
   UI/HudPanel.cs              面板布局与绘制（不碰 HWND），尺寸按内容算
@@ -104,6 +107,9 @@ dotnet run --project src/HotkeyHud.App -- --make-icon --out=<目录>
 
 # 附：诊断日志（判定链逐条落盘到 %TEMP%\hotkeyhud-show.log，Release 不输出）
 dotnet run --project src/HotkeyHud.App -- --diag
+
+# 附：用真实 %APPDATA% 跑一遍适配器（验收「读得出用户改过的键位」用）
+dotnet run --project src/HotkeyHud.App -- --adapter-check
 
 # 附：整屏截图（PerMonitorV2，物理像素；面板叠在真实应用上的证据靠它）
 dotnet run --project src/HotkeyHud.App -- --screen-shot=%TEMP%\shot.png
@@ -202,6 +208,35 @@ S1 立下的规矩是「不监听、不拦截、不抢焦点」。S7 起有**一
   （键位解析器只认字符键，`Plus` 不是合法键名）。
 - **系统档案 `_system.json` 用 `processNames: ["*"]` 通配**，不计入 `ProfileCount`；
   应用档案已有同一组合时按组合去重，不会出现两个同名键帽。
+
+### 用户自定义档案与自动读取（v1.8）
+
+```
+%APPDATA%\HotkeyHud\apps\
+  _global.json     全局条目，所有应用可见，组名「自定义」
+  notepad.json     应用级条目，与同名内置档案合并（文件名 = 进程名，不含 .exe）
+```
+
+| 规则 | 做法 |
+|---|---|
+| 顺序 | 内置先、用户后；同 `keys` **用户覆盖内置**，但保留内置里的位置（组顺序不被打乱） |
+| 降权豁免 | 用户显式写的条目**不进「通用」组**——他主动写的就是他想要的 |
+| 未收录应用 | `_global.json` 里有该修饰键的条目时不再显示引导空态（用户写的算内容） |
+| 失败 | 单个文件解析失败只跳过它，原因进 `LoadErrors`，托盘气泡提示 |
+| 进程名 | 托盘入口从选中的 exe 自动取，**不让用户手写** |
+
+托盘「添加应用快捷键…」：选 exe → 试适配器 → 命中写用户档案并提示条数；未命中生成带注释的模板并打开。
+
+**自动读取只对两家成立**（Windows 没有读任意应用快捷键的 API）：
+
+| 适配器 | 读什么 | 产出 |
+|---|---|---|
+| VS Code（`Code.exe`） | `%APPDATA%\Code\User\keybindings.json` | 用户改过/新增的键位；多键序列与 `-command` 解绑跳过 |
+| JetBrains（`idea64.exe` 等） | `%APPDATA%\JetBrains\<product>\keymaps\*.xml` | 只取 `first-keystroke`；带 `second-keystroke` 的两段式跳过 |
+
+**只能读到用户改过的键位**——应用内置默认键位在安装目录的只读资源里，读不到。
+所以完整视图 = 内置档案（默认键位）+ 用户档案（改过的）。
+VS Code 从没改过键位时 `keybindings.json` 是空数组 → 适配器产出 0 条，**这是正确行为**。
 
 ### 排序、分页与「通用」组（v1.7）
 
@@ -306,7 +341,7 @@ $ dotnet run --project src/HotkeyHud.App -- --integration-test
 --- 通过 10，失败 0 ---
 
 $ dotnet run --project src/HotkeyHud.App -- --render-gallery --out=<目录>
-[PASS] Gallery01 6 份档案可加载 — ProfileCount = 6，Dropped = 0，LoadErrors = 0
+[PASS] Gallery01 6 份档案可加载 — ProfileCount = 6，Dropped = 0，LoadErrors = 0（用户目录为空时不影响）
 [PASS] Gallery02 正常态截图 — 01-normal.png 1080×604，10 条
 [PASS] Gallery03 高亮态截图 — 02-highlight.png 1080×604，10 条
 [PASS] Gallery04 空态截图 — 03-empty.png 1080×216，0 条
@@ -464,7 +499,12 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
     D5 会把它当无边框全屏，于是在桌面上长按修饰键完全没反应。`GameClassifier` 现在先排除
     `Progman` / `WorkerW` / `Shell_TrayWnd` 三个外壳窗口类。Case19 锁定该行为，
     S1-B / S1-E 自检在「桌面在前台」这个状态下也恢复通过。
-25. **多页时的窗口高度 = 格数预算 + 3 格装填余量**：顺序装列在一组卡到列尾时会浪费 1–2 格，
+25. **用户档案文件名去掉 `.exe`**（`notepad.exe` → `notepad.json`）：与内置档案同名规则一致；
+    仓库在用户档案没写 `processNames` 时也用文件名兜底。
+26. **适配器读到 0 条时写空档案、不写示例**：VS Code 没改过键位就是 0 条，塞 3 条示例
+    会变成面板里的假数据。空档案 + 气泡说明「改过键位后重载即可」。
+27. **JetBrains 多产品目录取「最近写过」的那个**，并在气泡里写明选了哪个产品。
+28. **多页时的窗口高度 = 格数预算 + 3 格装填余量**：顺序装列在一组卡到列尾时会浪费 1–2 格，
     不给余量的话同一模型的某页会多出一行（翻页时窗口高度变化，P2 实测 496→444）。
     余量只抬窗口高度，**内容按本页实际格数均衡铺三列**——否则内容少的页会整列空着。
 
@@ -521,4 +561,5 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 | S7 覆盖度 + 分页 | 通过（含 1 项返工） |
 | S7 返工（诊断日志 / 空态引导 / 系统档案 / Edge） | 通过（含 3 项返工） |
 | S7 返工 2（组优先排序 / 通用组降权 / 分页按组对齐 / 桌面不算游戏） | 完成（4 个应用未抄录，见上表） |
+| S7.5 用户档案 + 适配器 | 完成（用户档案实测生效；VS Code 适配器真机 2 条，JetBrains 本机无 keymap） |
 | 发布准备（签名 / 安装包 / 用户 README） | 未开始 |

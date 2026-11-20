@@ -22,21 +22,32 @@ public sealed class ShortcutRepository
     };
 
     private readonly string _directory;
+    private readonly string? _userDirectory;
     private Dictionary<string, AppShortcutProfile> _byProcess = new(StringComparer.OrdinalIgnoreCase);
     private IReadOnlyList<string> _loadErrors = Array.Empty<string>();
     private int _profileCount;
+    private int _userProfileCount;
 
     /// <summary>系统档案（<c>processNames: ["*"]</c>）。未收录应用时仍然显示它。</summary>
     public AppShortcutProfile? SystemProfile { get; private set; }
 
-    public ShortcutRepository(string appsDirectory)
+    /// <summary>用户全局档案（<c>%APPDATA%\HotkeyHud\apps\_global.json</c>），组名「自定义」。</summary>
+    public AppShortcutProfile? GlobalProfile { get; private set; }
+
+    /// <param name="appsDirectory">内置档案目录（随 exe 输出，只读）。</param>
+    /// <param name="userAppsDirectory">用户档案目录（可写）。为 null 时只加载内置档案。</param>
+    public ShortcutRepository(string appsDirectory, string? userAppsDirectory = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(appsDirectory);
         _directory = appsDirectory;
+        _userDirectory = userAppsDirectory;
         Reload();
     }
 
     public int ProfileCount => _profileCount;
+
+    /// <summary>用户目录里被合并的档案数（一个 exe 一份）。</summary>
+    public int UserProfileCount => _userProfileCount;
 
     /// <summary>最近一次 <see cref="Reload"/> 中跳过的档案及原因。空表示全部加载成功。</summary>
     public IReadOnlyList<string> LoadErrors => _loadErrors;
@@ -115,14 +126,170 @@ public sealed class ShortcutRepository
             }
         }
 
+        // §3.4.1：用户目录后加载——内置先、用户后；同 keys 用户覆盖内置
+        AppShortcutProfile? global = null;
+        int userProfiles = 0;
+        if (!string.IsNullOrWhiteSpace(_userDirectory) && Directory.Exists(_userDirectory))
+        {
+            LoadUserProfiles(byProcess, errors, ref dropped, ref userProfiles, ref global);
+        }
+
         _byProcess = byProcess;
         _loadErrors = errors;
         _profileCount = loaded;
+        _userProfileCount = userProfiles;
         SystemProfile = systemProfile;
+        GlobalProfile = global;
         DroppedShortcutCount = dropped;
     }
 
-    private static AppShortcutProfile? TryLoadProfile(string file, ref int dropped, List<string> errors)
+    /// <summary>
+    /// 加载用户档案并与内置档案合并。文件名即进程名（`notepad.json` → notepad），
+    /// 也接受档案里显式写 <c>processNames</c>——但托盘入口会自动填，不要求用户手写。
+    /// </summary>
+    private void LoadUserProfiles(
+        Dictionary<string, AppShortcutProfile> byProcess,
+        List<string> errors,
+        ref int dropped,
+        ref int userProfiles,
+        ref AppShortcutProfile? global)
+    {
+        foreach (string file in Directory
+                     .EnumerateFiles(_userDirectory!, "*.json")
+                     .OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
+        {
+            bool isGlobal = string.Equals(
+                Path.GetFileNameWithoutExtension(file), "_global", StringComparison.OrdinalIgnoreCase);
+
+            AppShortcutProfile? user = TryLoadProfile(file, ref dropped, errors, markAsUser: true);
+            if (user is null)
+            {
+                continue;
+            }
+
+            if (isGlobal)
+            {
+                if (global is null)
+                {
+                    global = WithDefaultGroup(user, "自定义");
+                }
+                else
+                {
+                    errors.Add($"{file}: 已存在 _global.json，整份跳过");
+                }
+
+                continue;
+            }
+
+            // 用户档案没写 processNames 时用文件名兜底（托盘生成的文件一定带，手写的可能漏）
+            string[] names = user.ProcessNames.Length > 0
+                ? user.ProcessNames
+                : new[] { Path.GetFileNameWithoutExtension(file) };
+
+            var keys = new List<string>();
+            foreach (string name in names)
+            {
+                string key = Normalize(name);
+                if (key.Length != 0)
+                {
+                    keys.Add(key);
+                }
+            }
+
+            if (keys.Count == 0)
+            {
+                errors.Add($"{file}: 推不出进程名（文件名与 processNames 都为空）");
+                continue;
+            }
+
+            foreach (string key in keys)
+            {
+                byProcess[key] = byProcess.TryGetValue(key, out AppShortcutProfile? builtin)
+                    ? Merge(builtin, user)
+                    : user;
+            }
+
+            userProfiles++;
+        }
+    }
+
+    /// <summary>同 keys 用户覆盖内置；用户独有的条目追加在末尾（§3.4.1）。</summary>
+    private static AppShortcutProfile Merge(AppShortcutProfile builtin, AppShortcutProfile user)
+    {
+        var byKey = new Dictionary<string, ShortcutEntry>(StringComparer.OrdinalIgnoreCase);
+        var order = new List<string>();
+
+        foreach (ShortcutEntry entry in builtin.Shortcuts)
+        {
+            string key = DedupeKey(entry);
+            if (byKey.TryAdd(key, entry))
+            {
+                order.Add(key);
+            }
+        }
+
+        foreach (ShortcutEntry entry in user.Shortcuts)
+        {
+            string key = DedupeKey(entry);
+            if (byKey.ContainsKey(key))
+            {
+                byKey[key] = entry; // 覆盖，但保留内置里的位置，组顺序不被打乱
+            }
+            else
+            {
+                byKey[key] = entry;
+                order.Add(key);
+            }
+        }
+
+        var shortcuts = new List<ShortcutEntry>(order.Count);
+        foreach (string key in order)
+        {
+            shortcuts.Add(byKey[key]);
+        }
+
+        return new AppShortcutProfile
+        {
+            App = builtin.App,
+            DisplayName = string.IsNullOrWhiteSpace(user.DisplayName) ? builtin.DisplayName : user.DisplayName,
+            ProcessNames = builtin.ProcessNames,
+            Shortcuts = shortcuts,
+        };
+    }
+
+    private static AppShortcutProfile WithDefaultGroup(AppShortcutProfile profile, string group)
+    {
+        var shortcuts = new List<ShortcutEntry>(profile.Shortcuts.Count);
+        foreach (ShortcutEntry entry in profile.Shortcuts)
+        {
+            shortcuts.Add(string.IsNullOrWhiteSpace(entry.Group)
+                ? new ShortcutEntry
+                {
+                    Source = entry.Source,
+                    Keys = entry.Keys,
+                    Action = entry.Action,
+                    Group = group,
+                    Combo = entry.Combo,
+                    IsValid = entry.IsValid,
+                }
+                : entry);
+        }
+
+        return new AppShortcutProfile
+        {
+            App = profile.App,
+            DisplayName = profile.DisplayName,
+            ProcessNames = profile.ProcessNames,
+            Shortcuts = shortcuts,
+        };
+    }
+
+    /// <summary>去重键：能解析就用规范化组合（`Ctrl+F` 与 `control+f` 视为同一条），否则用原文。</summary>
+    private static string DedupeKey(ShortcutEntry entry)
+        => entry.IsValid ? Keys.Format(entry.Combo) : entry.Keys.Trim().ToLowerInvariant();
+
+    private static AppShortcutProfile? TryLoadProfile(
+        string file, ref int dropped, List<string> errors, bool markAsUser = false)
     {
         ProfileDocument? document;
         try
@@ -148,7 +315,8 @@ public sealed class ShortcutRepository
             return null;
         }
 
-        if (document.ProcessNames is null || document.ProcessNames.Length == 0)
+        // 用户档案允许省略 processNames：文件名就是进程名（托盘入口会自动填，手写的可能漏）
+        if (!markAsUser && (document.ProcessNames is null || document.ProcessNames.Length == 0))
         {
             errors.Add($"{file}: 缺少 processNames");
             return null;
@@ -177,6 +345,7 @@ public sealed class ShortcutRepository
 
             shortcuts.Add(new ShortcutEntry
             {
+                Source = markAsUser ? ShortcutSource.User : ShortcutSource.Builtin,
                 Keys = item.Keys,
                 Action = item.Action,
                 Group = item.Group,
@@ -191,7 +360,7 @@ public sealed class ShortcutRepository
             DisplayName = string.IsNullOrWhiteSpace(document.DisplayName)
                 ? document.App
                 : document.DisplayName,
-            ProcessNames = document.ProcessNames,
+            ProcessNames = document.ProcessNames ?? Array.Empty<string>(),
             Shortcuts = shortcuts,
         };
     }

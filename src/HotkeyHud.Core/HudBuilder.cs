@@ -39,15 +39,18 @@ public static class HudBuilder
         Modifier modifier,
         KnownShortcutFilter filter,
         string fallbackAppName = "",
-        int pageIndex = 0)
+        int pageIndex = 0,
+        AppShortcutProfile? globalProfile = null)
     {
         ArgumentNullException.ThrowIfNull(filter);
 
-        List<Match> matches = Collect(profile, systemProfile, modifier, filter, out int deferred);
+        List<Match> matches = Collect(
+            profile, globalProfile, systemProfile, modifier, filter, out int deferred, out int fromGlobal);
 
         // §3.2 v1.6：未收录应用不再拿系统档案的零星 Ctrl 条目冒充内容。
         // 除 Win 之外一律走引导空态——Win 面板的全部内容本来就是系统快捷键。
-        if (profile is null && modifier != Modifier.Win)
+        // 例外：用户在 _global.json 里显式写过的条目算「有内容」，不再显示引导。
+        if (profile is null && modifier != Modifier.Win && fromGlobal == 0)
         {
             matches.Clear();
         }
@@ -117,19 +120,25 @@ public static class HudBuilder
 
     private static List<Match> Collect(
         AppShortcutProfile? profile,
+        AppShortcutProfile? globalProfile,
         AppShortcutProfile? systemProfile,
         Modifier modifier,
         KnownShortcutFilter filter,
-        out int deferred)
+        out int deferred,
+        out int fromGlobal)
     {
         deferred = 0;
+        fromGlobal = 0;
         var matches = new List<Match>();
 
-        // 应用条目在前，系统条目在后（§2.5）。
-        // 系统条目按组合去重：Word 的 Ctrl+Backspace 与系统档案的同名条目不能各占一格。
+        // 应用条目在前，用户全局条目次之，系统条目最后（§2.5 / §3.4.1）。
+        // 后两者按组合去重：Word 的 Ctrl+Backspace 与系统档案的同名条目不能各占一格。
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var ranks = new Dictionary<string, int>(StringComparer.Ordinal);
         Append(matches, profile, modifier, filter, ref deferred, seen, ranks, dedupe: false);
+        int beforeGlobal = matches.Count;
+        Append(matches, globalProfile, modifier, filter, ref deferred, seen, ranks, dedupe: true);
+        fromGlobal = matches.Count - beforeGlobal;
         Append(matches, systemProfile, modifier, filter, ref deferred, seen, ranks, dedupe: true);
 
         // §3.2 v1.7：组优先（组顺序 = 档案里首次出现的顺序），组内按修饰键数量升序。
@@ -176,8 +185,9 @@ public static class HudBuilder
 
             seen.Add(comboKey);
 
-            // §4.3 v1.7：命中熟记名单不剔除，只降权到「通用」组（排最后一页）
-            bool isGeneral = filter.IsKnown(entry.Combo);
+            // §4.3 v1.7：命中熟记名单不剔除，只降权到「通用」组（排最后一页）。
+            // §3.4.1 降权豁免：用户显式写的条目不受影响——他主动写的就是他想要的
+            bool isGeneral = entry.Source != ShortcutSource.User && filter.IsKnown(entry.Combo);
             if (isGeneral)
             {
                 deferred++;

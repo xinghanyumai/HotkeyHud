@@ -41,16 +41,34 @@ public sealed class HudApp : IDisposable
     private bool _gameSuppressed;
     private bool _disposed;
 
-    public HudApp(string? appsDirectory = null, GameRules? gameRules = null, AppConfig? config = null)
+    /// <summary>用户档案目录的默认位置（§3.4.1）。</summary>
+    public static string DefaultUserAppsDirectory => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "HotkeyHud", "apps");
+
+    /// <param name="appsDirectory">内置档案目录；null = 随 exe 输出的 Data\apps。</param>
+    /// <param name="gameRules">抑制规则，null = 用配置里的名单。</param>
+    /// <param name="config">配置，null = 默认值。</param>
+    /// <param name="userAppsDirectory">
+    /// 用户档案目录。null 且 <paramref name="appsDirectory"/> 也为 null（生产路径）时用
+    /// <see cref="DefaultUserAppsDirectory"/>；显式给了内置目录（测试）则不加载用户档案，
+    /// 避免测试被真实 %APPDATA% 里的文件污染。
+    /// </param>
+    public HudApp(
+        string? appsDirectory = null,
+        GameRules? gameRules = null,
+        AppConfig? config = null,
+        string? userAppsDirectory = null)
     {
         string directory = appsDirectory
                            ?? Path.Combine(AppContext.BaseDirectory, "Data", "apps");
+        string? userDirectory = userAppsDirectory
+                                ?? (appsDirectory is null ? DefaultUserAppsDirectory : null);
 
         Config = config ?? new AppConfig();
         GameRules = gameRules ?? new GameRules { GameProcessNames = Config.ExtraGameProcesses };
         _known = new KnownShortcutFilter(Config.KnownShortcuts);
 
-        _repository = new ShortcutRepository(directory);
+        _repository = new ShortcutRepository(directory, userDirectory);
         // 先建会抛异常的那个，避免它失败时已经占着 Raw Input 窗口与 HGlobal
         _watcher = new ForegroundWatcher();
         _input = new RawInputSource();
@@ -290,8 +308,22 @@ public sealed class HudApp : IDisposable
         try
         {
             GameSignal signal = _suppressionProbe.Capture();
+            bool wasSuppressed = _gameSuppressed;
             _gameSuppressed = GameClassifier.ShouldSuppress(signal, GameRules, out string reason);
             SuppressReason = reason;
+
+            if (ShowDiagnostics.Enabled && wasSuppressed != _gameSuppressed)
+            {
+                ShowDiagnostics.Write(
+                    "suppress",
+                    ("value", _gameSuppressed.ToString().ToLowerInvariant()),
+                    ("reason", reason.Length > 0 ? reason : "-"),
+                    ("processName", _probe.ProcessName),
+                    ("covers", signal.CoversWholeMonitor.ToString().ToLowerInvariant()),
+                    ("caption", signal.HasCaption.ToString().ToLowerInvariant()),
+                    ("quns", _suppressionProbe.LastNotificationState.ToString()));
+            }
+
             ApplySuppression();
         }
         catch (Exception ex)
@@ -397,7 +429,8 @@ public sealed class HudApp : IDisposable
             modifier,
             _known,
             displayName,
-            _pageIndex);
+            _pageIndex,
+            _repository.GlobalProfile);
 
         RenderModel(_currentModel, null);
         UpdatePageHook();

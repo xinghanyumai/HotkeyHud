@@ -489,7 +489,7 @@ internal static class HudPanel
 
             // 首块要留一格给组名，续块也要留一格给「（续）」
             int index = 0;
-            string title = block.Title;
+            string? title = block.Title;
             while (index < block.Items.Count)
             {
                 int capacity = MaxRowsBeforeSplit - 1;
