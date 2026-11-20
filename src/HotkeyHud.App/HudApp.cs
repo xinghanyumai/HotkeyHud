@@ -144,6 +144,12 @@ public sealed class HudApp : IDisposable
     /// <summary>翻页钩子当前是否装着。验收用它区分「多页装了」与「单页没装」。</summary>
     public bool IsPageHookInstalled => _pageHook?.IsInstalled == true;
 
+    /// <summary>
+    /// 钩子通路投递的翻页请求数。验收用：一次按键应只 +1——
+    /// 修复前按下与松开都会投递，这里是 2。
+    /// </summary>
+    public int HookPageRequests { get; private set; }
+
     /// <summary>最近一次抑制判定的命中原因，空串表示未抑制。</summary>
     public string SuppressReason { get; private set; } = string.Empty;
 
@@ -418,7 +424,7 @@ public sealed class HudApp : IDisposable
             ("overlayRect", rectText));
     }
 
-    private void BuildAndRender(Modifier modifier)
+    private void BuildAndRender(Modifier modifier, bool reanchor = true)
     {
         string processName = _probe.ProcessName;
         string displayName = processName.Length > 0 ? processName : "未知进程";
@@ -432,7 +438,7 @@ public sealed class HudApp : IDisposable
             _pageIndex,
             _repository.GlobalProfile);
 
-        RenderModel(_currentModel, null);
+        RenderModel(_currentModel, null, reanchor);
         UpdatePageHook();
     }
 
@@ -454,7 +460,9 @@ public sealed class HudApp : IDisposable
         }
 
         _pageIndex = next;
-        BuildAndRender(_currentModel.Modifier);
+
+        // 翻页只重绘内容：尺寸由格数预算固定，重算位置会让面板跳一下
+        BuildAndRender(_currentModel.Modifier, reanchor: false);
     }
 
     /// <summary>
@@ -483,7 +491,10 @@ public sealed class HudApp : IDisposable
 
     /// <summary>钩子吞掉翻页键后的回调：只投递消息，绝不在钩子里渲染。</summary>
     private void OnPageKeySwallowed(int virtualKey)
-        => PostPageRequest(virtualKey == KeyNames.VkDown ? 1 : -1);
+    {
+        HookPageRequests++;
+        PostPageRequest(virtualKey == KeyNames.VkDown ? 1 : -1);
+    }
 
     /// <summary>
     /// 钩子回调里只做一件事：把翻页意图投递出去。真正的翻页在消息循环里做，
@@ -505,7 +516,7 @@ public sealed class HudApp : IDisposable
         }
 
         // 高亮只换颜色与背景，尺寸仍由同一份模型决定，不会重建 DIB
-        RenderModel(_currentModel, combo);
+        RenderModel(_currentModel, combo, reanchor: false);
     }
 
     private void OnHideRequested()
@@ -524,9 +535,9 @@ public sealed class HudApp : IDisposable
         UpdatePageHook(); // 收起即卸钩，不延迟
     }
 
-    private void RenderModel(HudModel model, Combo? highlight)
+    private void RenderModel(HudModel model, Combo? highlight, bool reanchor = true)
     {
-        _overlay.ShowModel(model, highlight);
+        _overlay.ShowModel(model, highlight, reanchor);
         IsOverlayVisible = true;
         HighlightedCombo = highlight;
 

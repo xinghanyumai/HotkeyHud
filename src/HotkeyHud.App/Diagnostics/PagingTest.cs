@@ -44,6 +44,8 @@ internal static class PagingTest
         Case("P4 单页不装钩子", () => SinglePageNoHook());
         Case("P5 多页吞键并翻页", () => HookSwallowsAndPages());
         Case("P6 15 秒安全阀", () => SafetyValve());
+        Case("P7 按一次 ↓ 只翻一页", SingleKeyPressPagesOnce);
+        Case("P8 连翻 3 页窗口矩形不变", PageTurnKeepsPosition);
 
         return Flush();
     }
@@ -204,6 +206,67 @@ internal static class PagingTest
         Require(hidden, "超过 15 秒面板仍未自动收起");
         Require(uninstalled, "安全阀触发后钩子未卸载");
         return $"key-up 丢失 {clock.ElapsedMilliseconds} ms 后面板自动收起，钩子已卸";
+    }
+
+    private static string SingleKeyPressPagesOnce()
+    {
+        using Form window = CreateWindow();
+        string apps = CreateAppsDirectory(many: true);
+        using var hud = new HudApp(apps, config: new AppConfig { DwellMs = 300 });
+
+        ReleaseAll();
+        FocusWindow(window.Handle);
+        Require(LongPress(hud, window.Handle), "面板未弹出");
+        Require(hud.IsPageHookInstalled, "前置条件不成立：钩子未安装");
+
+        int before = hud.CurrentModel!.PageIndex;
+        int hookBefore = hud.HookPageRequests;
+
+        // 真实按键：按下与松开都会经过钩子。修复前两次都投递 → 一次 ↓ 翻两页
+        KeyDown(VkDown);
+        Pump(60);
+        KeyUp(VkDown);
+        Pump(250);
+
+        int hookAfter = hud.HookPageRequests;
+        int after = hud.CurrentModel!.PageIndex;
+        ReleaseAll();
+        Pump(150);
+
+        // 本机注入时低层钩子不回调（同一进程里另装一个钩子也不回调，属环境限制），
+        // 所以这里验的是「整条链路只前进一页」；钩子层的 flags 解析由 Shell11 用
+        // 合成的 KBDLLHOOKSTRUCT 单独锁定（变异验证过：去掉 flags 判断即 FAIL）。
+        Require(after == before + 1,
+            $"按一次 ↓ 应只前进 1 页，实际 {before + 1} → {after + 1}");
+        return $"第 {before + 1} → {after + 1} 页（钩子投递 {hookAfter - hookBefore} 次；本机注入下钩子不回调，见 Shell11）";
+    }
+
+    private static string PageTurnKeepsPosition()
+    {
+        using Form window = CreateWindow();
+        string apps = CreateAppsDirectory(many: true);
+        using var hud = new HudApp(apps, config: new AppConfig { DwellMs = 300 });
+
+        ReleaseAll();
+        FocusWindow(window.Handle);
+        Require(LongPress(hud, window.Handle), "面板未弹出");
+        Require(hud.CurrentModel!.PageCount >= 4, "前置条件不成立：样本不足 4 页");
+
+        var rects = new List<(int Left, int Top, int Width, int Height)> { WindowRect(hud) };
+        for (int i = 0; i < 3; i++)
+        {
+            PressPageKey(hud, VkDown);
+            rects.Add(WindowRect(hud));
+        }
+
+        ReleaseAll();
+        Pump(150);
+
+        Require(rects.Distinct().Count() == 1,
+            "翻页改变了窗口矩形：" + string.Join(" → ", rects));
+
+        return $"连翻 3 页，GetWindowRect 四次均为 {rects[0].Width}×{rects[0].Height}"
+               + $" @({rects[0].Left},{rects[0].Top})";
     }
 
     // ---------------- 基础设施 ----------------

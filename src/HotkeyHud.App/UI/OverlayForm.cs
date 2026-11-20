@@ -43,6 +43,7 @@ public sealed class OverlayForm : Form
     private HudModel? _lastModel;
     private IntPtr _anchorMonitor;
     private Combo? _lastHighlight;
+    private float _lastScale = 1f;
 
     public OverlayForm(Func<bool>? animationsEnabled = null)
     {
@@ -88,8 +89,19 @@ public sealed class OverlayForm : Form
     /// 按 §6 规格渲染快捷键面板：先按光标挑屏，再用该屏的 DPI 算尺寸，最后决定贴下缘还是上缘。
     /// 每次呈现都重算——光标换屏或换半边时必须跟着走。
     /// </summary>
-    public void ShowModel(HudModel model, Combo? highlight)
+    /// <param name="reanchor">
+    /// 是否重新算位置。翻页 / 高亮传 <c>false</c>：尺寸由格数预算固定，
+    /// 位置沿用上一次——重算会因光标位置或边界钳制让面板跳一下。
+    /// </param>
+    public void ShowModel(HudModel model, Combo? highlight, bool reanchor = true)
     {
+        if (!reanchor && _isVisible && LastBounds.Width > 0)
+        {
+            // 只重绘内容，不动窗口几何
+            PresentModel(LastBounds, model, highlight, _lastScale);
+            return;
+        }
+
         (Rectangle bounds, float scale, IntPtr monitor) = ResolveBounds(model);
         _anchorMonitor = monitor;
         PresentModel(bounds, model, highlight, scale);
@@ -215,6 +227,7 @@ public sealed class OverlayForm : Form
     private void PresentModel(Rectangle bounds, HudModel model, Combo? highlight, float scale)
     {
         LastBounds = bounds;
+        _lastScale = scale;
         EnsureDeviceResources(bounds.Width, bounds.Height);
         EnsureCanvas(bounds.Width, bounds.Height);
 

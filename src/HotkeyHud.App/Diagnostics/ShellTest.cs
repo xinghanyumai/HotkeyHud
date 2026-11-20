@@ -1,5 +1,6 @@
 #if DEBUG
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
 using HotkeyHud.App.Platform;
 using HotkeyHud.App.Shell;
@@ -46,6 +47,7 @@ internal static class ShellTest
         Case("Shell08 单实例跨进程生效", SingleInstanceBlocksSecond);
         Case("Shell09 用户档案：覆盖内置 / 降权豁免 / 新增生效", UserProfileMerges);
         Case("Shell10 适配器与模板：VS Code / JetBrains / 模板可被加载", AdaptersAndTemplate);
+        Case("Shell11 钩子只对按下翻页（flags 偏移 8）", HookFlagsParsed);
 
         return Flush();
     }
@@ -340,6 +342,46 @@ internal static class ShellTest
                 // 清理失败不影响结论
             }
         }
+    }
+
+    private static string HookFlagsParsed()
+    {
+        var hits = new List<int>();
+        using var hook = new LowLevelKeyboardHook(vk => vk is 0x28 or 0x26, vk => hits.Add(vk));
+
+        // 合成 KBDLLHOOKSTRUCT：0 vkCode / 4 scanCode / 8 flags / 12 time
+        IntPtr buffer = Marshal.AllocHGlobal(20);
+        try
+        {
+            Marshal.WriteInt32(buffer, 0, 0x28);   // vkCode = VK_DOWN
+            Marshal.WriteInt32(buffer, 4, 0x50);   // scanCode
+            Marshal.WriteInt32(buffer, 12, 0);
+
+            // 按下：flags = 0
+            Marshal.WriteInt32(buffer, 8, 0);
+            IntPtr downResult = hook.DispatchForTest(0, IntPtr.Zero, buffer);
+
+            // 松开：flags = LLKHF_UP (0x80)
+            Marshal.WriteInt32(buffer, 8, 0x80);
+            IntPtr upResult = hook.DispatchForTest(0, IntPtr.Zero, buffer);
+
+            Require(downResult == (IntPtr)1, "按下应被吞掉（返回 1）");
+            Require(upResult == (IntPtr)1, "松开也必须吞掉（返回 1），否则前台会收到孤立 keyup");
+            Require(hits.Count == 1, $"按下 + 松开应只通知 1 次翻页，实际 {hits.Count} 次");
+            Require(hits[0] == 0x28, $"通知的虚拟键不符：0x{hits[0]:X}");
+
+            // 非翻页键：既不吞也不通知
+            Marshal.WriteInt32(buffer, 0, 0x41);
+            IntPtr other = hook.DispatchForTest(0, IntPtr.Zero, buffer);
+            Require(other != (IntPtr)1, "非翻页键不应被吞");
+            Require(hits.Count == 1, "非翻页键不应触发翻页");
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+
+        return "按下通知 1 次、松开不通知，两者都返回 1；非翻页键放行";
     }
 
     private static string CorruptConfigHandled()

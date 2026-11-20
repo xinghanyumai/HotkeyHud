@@ -515,8 +515,11 @@ internal static class HudPanel
             total += block.Height;
         }
 
-        // 窗口高度（行数）由预算决定：多页时必须固定，否则翻页会重建 DIB 并闪一下（§6.1）
-        int windowRows = Math.Max(RowsOf(total), RowsOf(cellBudget));
+        // 窗口高度（行数）只由跨页恒定的格数预算决定——不能再掺当前页的 total，
+        // 否则末页条目少 → 高度变小 → 底部锚定的面板顶边下移（翻页「跳一下」）
+        int windowRows = cellBudget > 0
+            ? RowsOf(cellBudget)
+            : RowsOf(total);
 
         // 但**内容**按本页实际格数均衡铺满三列——直接用 windowRows 当列高，
         // 内容少的页会只填满两列、第三列整列空着（Word 第 1 页实测）
