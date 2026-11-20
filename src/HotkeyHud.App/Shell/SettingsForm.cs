@@ -504,6 +504,14 @@ internal sealed class SettingsForm : Form
         {
             _scaled = true;
             Scale(new SizeF(factor, factor));
+
+            // ListView 的列宽不是控件，Form.Scale 不会带它一起放大——
+            // 不单独补一刀，键位列在 200% 屏上仍然只有一半宽（Ctrl+Backspace 被截断）
+            if (_items.Columns.Count == 3)
+            {
+                _items.Columns[0].Width = (int)Math.Round(170 * factor);
+                _items.Columns[2].Width = (int)Math.Round(80 * factor);
+            }
         }
     }
 
