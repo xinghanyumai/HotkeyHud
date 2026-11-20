@@ -27,6 +27,7 @@ public sealed class ShortcutRepository
     private IReadOnlyList<string> _loadErrors = Array.Empty<string>();
     private int _profileCount;
     private int _userProfileCount;
+    private IReadOnlyList<AppShortcutProfile> _profiles = Array.Empty<AppShortcutProfile>();
 
     /// <summary>系统档案（<c>processNames: ["*"]</c>）。未收录应用时仍然显示它。</summary>
     public AppShortcutProfile? SystemProfile { get; private set; }
@@ -48,6 +49,9 @@ public sealed class ShortcutRepository
 
     /// <summary>用户目录里被合并的档案数（一个 exe 一份）。</summary>
     public int UserProfileCount => _userProfileCount;
+
+    /// <summary>全部应用档案（内置在前、用户在后），设置页用它列应用。</summary>
+    public IReadOnlyList<AppShortcutProfile> Profiles => _profiles;
 
     /// <summary>最近一次 <see cref="Reload"/> 中跳过的档案及原因。空表示全部加载成功。</summary>
     public IReadOnlyList<string> LoadErrors => _loadErrors;
@@ -134,6 +138,17 @@ public sealed class ShortcutRepository
             LoadUserProfiles(byProcess, errors, ref dropped, ref userProfiles, ref global);
         }
 
+        var ordered = new List<AppShortcutProfile>();
+        var added = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (AppShortcutProfile profile in byProcess.Values.OrderBy(p => p.App, StringComparer.OrdinalIgnoreCase))
+        {
+            if (added.Add(profile.App))
+            {
+                ordered.Add(profile);
+            }
+        }
+
+        _profiles = ordered;
         _byProcess = byProcess;
         _loadErrors = errors;
         _profileCount = loaded;
@@ -204,9 +219,18 @@ public sealed class ShortcutRepository
 
             foreach (string key in keys)
             {
-                byProcess[key] = byProcess.TryGetValue(key, out AppShortcutProfile? builtin)
+                AppShortcutProfile merged = byProcess.TryGetValue(key, out AppShortcutProfile? builtin)
                     ? Merge(builtin, user)
                     : user;
+
+                byProcess[key] = new AppShortcutProfile
+                {
+                    App = merged.App,
+                    DisplayName = merged.DisplayName,
+                    ProcessNames = merged.ProcessNames,
+                    IsUserOwned = true,
+                    Shortcuts = merged.Shortcuts,
+                };
             }
 
             userProfiles++;
@@ -343,12 +367,20 @@ public sealed class ShortcutRepository
                 dropped++; // §3.1：解析失败静默丢弃并计数
             }
 
+            string? color = HudColors.Normalize(item.Color);
+            if (!string.IsNullOrWhiteSpace(item.Color) && color is null)
+            {
+                // 只接受 8 个预设值：其他值按缺省处理并留证
+                errors.Add($"{file}: 条目 \"{item.Keys}\" 的颜色 \"{item.Color}\" 不是预设值，已按默认色处理");
+            }
+
             shortcuts.Add(new ShortcutEntry
             {
                 Source = markAsUser ? ShortcutSource.User : ShortcutSource.Builtin,
                 Keys = item.Keys,
                 Action = item.Action,
                 Group = item.Group,
+                Color = color,
                 Combo = combo,
                 IsValid = parsed,
             });
@@ -363,6 +395,47 @@ public sealed class ShortcutRepository
             ProcessNames = document.ProcessNames ?? Array.Empty<string>(),
             Shortcuts = shortcuts,
         };
+    }
+
+    /// <summary>
+    /// 把整份档案写成用户副本（§3.4.1）。**只写用户目录，绝不碰安装目录的内置档案。**
+    /// 返回写入路径；没配用户目录时抛 <see cref="InvalidOperationException"/>。
+    /// </summary>
+    public string SaveUserProfile(AppShortcutProfile profile)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+        if (string.IsNullOrWhiteSpace(_userDirectory))
+        {
+            throw new InvalidOperationException("没有配置用户档案目录，无法保存");
+        }
+
+        Directory.CreateDirectory(_userDirectory);
+
+        var document = new Dictionary<string, object?>
+        {
+            ["app"] = profile.App,
+            ["displayName"] = profile.DisplayName,
+            ["processNames"] = profile.ProcessNames,
+            ["shortcuts"] = profile.Shortcuts.Select(entry => new Dictionary<string, object?>
+            {
+                ["keys"] = entry.Keys,
+                ["action"] = entry.Action,
+                ["group"] = entry.Group,
+                ["color"] = entry.Color,
+            }).ToList(),
+        };
+
+        string path = Path.Combine(_userDirectory, profile.App + ".json");
+        File.WriteAllText(
+            path,
+            JsonSerializer.Serialize(document, new JsonSerializerOptions
+            {
+                WriteIndented = true,
+                Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping,
+            }));
+
+        Reload();
+        return path;
     }
 
     /// <summary>归一化：去空白、去 <c>.exe</c> 后缀。大小写由字典的比较器处理。</summary>
@@ -396,6 +469,9 @@ public sealed class ShortcutRepository
     {
         [JsonPropertyName("keys")]
         public string? Keys { get; set; }
+
+        [JsonPropertyName("color")]
+        public string? Color { get; set; }
 
         [JsonPropertyName("action")]
         public string? Action { get; set; }

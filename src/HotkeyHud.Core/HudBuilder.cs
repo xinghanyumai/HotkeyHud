@@ -95,7 +95,12 @@ public static class HudBuilder
                 Modifiers = match.Entry.Combo.Modifiers & ~modifier,
             };
 
-            items.Add(new HudItem { Keys = Keys.Format(display), Action = match.Entry.Action });
+            items.Add(new HudItem
+            {
+                Keys = Keys.Format(display),
+                Action = match.Entry.Action,
+                Color = match.Entry.Color,
+            });
         }
 
         var groups = new HudGroup[groupOrder.Count];

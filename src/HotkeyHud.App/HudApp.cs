@@ -105,6 +105,9 @@ public sealed class HudApp : IDisposable
 
     public RawInputSource Input => _input;
 
+    /// <summary>档案仓库（设置页要用同一份，才能看到内置 + 用户合并后的结果）。</summary>
+    public ShortcutRepository Repository => _repository;
+
     public OverlayForm Overlay => _overlay;
 
     public bool IsOverlayVisible { get; private set; }

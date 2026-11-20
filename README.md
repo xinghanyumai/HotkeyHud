@@ -54,6 +54,8 @@ src/HotkeyHud.App/
   Shell/AutoStart.cs             HKCU Run 写入/删除
   Shell/SingleInstance.cs        单实例互斥
   Shell/UserApps.cs              用户档案模板与写入（%APPDATA%\HotkeyHud\apps）
+  Shell/SettingsForm.cs          设置页：应用列表 + 条目表 + 按键录入 + 8 色预设（手写布局）
+  HudColors.cs                   键帽预设色（8 个，含「默认」）
   Shell/Adapters/VsCodeAdapter.cs     读 keybindings.json（只读用户改过的键位）
   Shell/Adapters/JetBrainsAdapter.cs  读 keymaps/*.xml（只取 first-keystroke）
   Shell/ShellController.cs       外壳编排：配置 → HudApp → 托盘
@@ -110,6 +112,9 @@ dotnet run --project src/HotkeyHud.App -- --diag
 
 # 附：用真实 %APPDATA% 跑一遍适配器（验收「读得出用户改过的键位」用）
 dotnet run --project src/HotkeyHud.App -- --adapter-check
+
+# 附：设置页自检（打印打开前后的私有工作集，10 秒后自动关闭）
+dotnet run --project src/HotkeyHud.App -- --settings-demo
 
 # 附：整屏截图（PerMonitorV2，物理像素；面板叠在真实应用上的证据靠它）
 dotnet run --project src/HotkeyHud.App -- --screen-shot=%TEMP%\shot.png
@@ -208,6 +213,25 @@ S1 立下的规矩是「不监听、不拦截、不抢焦点」。S7 起有**一
   （键位解析器只认字符键，`Plus` 不是合法键名）。
 - **系统档案 `_system.json` 用 `processNames: ["*"]` 通配**，不计入 `ProfileCount`；
   应用档案已有同一组合时按组合去重，不会出现两个同名键帽。
+
+### 设置页（S7.6）
+
+托盘 →「设置…」。WinForms 单窗体、手写布局、零 NuGet、非模态、关闭即 `Dispose`。
+
+| 区域 | 内容 |
+|---|---|
+| 左 | 应用列表：`名称 条数 · 内置/我的`；底部「添加应用…」 |
+| 右 | 条目表：键位 / 动作 / 颜色；底部编辑行 + `+ 添加` / `删除` |
+| 底 | 提示 + `保存` / `关闭` |
+
+三条交互：
+
+- **内置只读**：保存时整份写 `%APPDATA%\HotkeyHud\apps\<app>.json`，安装目录的文件一个字节都不动。
+- **按键录入**：点键位框进入录入态，直接按 `Ctrl+Alt+F` 自动填入（`Esc` 取消）；只按修饰键不产出组合。
+- **8 色预设**：默认 / 蓝 / 橙 / 绿 / 青 / 紫 / 粉 / 红。非预设值按默认色处理并记一条加载警告。
+  颜色只染键帽描边与键帽文字，动作文案保持主色。
+
+内存：实测打开增量约 **2.4–2.9 MB**（`--settings-demo` 打印 before/after）。
 
 ### 用户自定义档案与自动读取（v1.8）
 
@@ -504,7 +528,14 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 26. **适配器读到 0 条时写空档案、不写示例**：VS Code 没改过键位就是 0 条，塞 3 条示例
     会变成面板里的假数据。空档案 + 气泡说明「改过键位后重载即可」。
 27. **JetBrains 多产品目录取「最近写过」的那个**，并在气泡里写明选了哪个产品。
-28. **多页时的窗口高度 = 格数预算 + 3 格装填余量**：顺序装列在一组卡到列尾时会浪费 1–2 格，
+28. **设置页按 DPI 整体放大一次**（`OnLoad` 里 `Scale(DeviceDpi/96)`）：手写布局的尺寸是 96 DPI
+    逻辑值，不放大时 200% 屏上窗口只有一半大、控件挤成一团（实测截图）。
+29. **保存写「整份副本」而不是增量补丁**：用户一改就把合并后的整份写进用户档案，
+    之后内置更新不会覆盖他的修改（这正是「我的档案」的语义）。
+30. **P7 在本机只能验到「整条链路只前进一页」**：注入按键时低层键盘钩子不回调
+    （同进程另装一个钩子也不回调，属环境限制）。钩子层的 `flags` 解析改由 Shell11
+    用合成 `KBDLLHOOKSTRUCT` 锁定——变异验证过：去掉 `LLKHF_UP` 判断即 FAIL（通知 2 次）。
+31. **多页时的窗口高度 = 格数预算 + 3 格装填余量**：顺序装列在一组卡到列尾时会浪费 1–2 格，
     不给余量的话同一模型的某页会多出一行（翻页时窗口高度变化，P2 实测 496→444）。
     余量只抬窗口高度，**内容按本页实际格数均衡铺三列**——否则内容少的页会整列空着。
 
@@ -562,4 +593,5 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 | S7 返工（诊断日志 / 空态引导 / 系统档案 / Edge） | 通过（含 3 项返工） |
 | S7 返工 2（组优先排序 / 通用组降权 / 分页按组对齐 / 桌面不算游戏） | 完成（4 个应用未抄录，见上表） |
 | S7.5 用户档案 + 适配器 | 完成（用户档案实测生效；VS Code 适配器真机 2 条，JetBrains 本机无 keymap） |
+| S7.6 修两个 bug + 设置页 | 完成（钩子 flags / 翻页不重算位置 / 设置页含按键录入与 8 色） |
 | 发布准备（签名 / 安装包 / 用户 README） | 未开始 |

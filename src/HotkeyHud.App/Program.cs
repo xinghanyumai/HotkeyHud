@@ -1,5 +1,7 @@
 using System.Text;
+using System.Diagnostics;
 using HotkeyHud.App.Shell;
+using HotkeyHud.Core;
 using HotkeyHud.App.Shell.Adapters;
 #if DEBUG
 using HotkeyHud.App.Diagnostics;
@@ -104,6 +106,11 @@ internal static class Program
                 return RunAdapterCheck();
             }
 
+            if (options.SettingsDemo)
+            {
+                return RunSettingsDemo();
+            }
+
             if (options.TemplatePreview is { } previewExe)
             {
                 Console.OutputEncoding = new UTF8Encoding(false);
@@ -169,6 +176,56 @@ internal static class Program
                 Console.WriteLine($"  {entry.Keys} = {entry.Action}");
             }
         }
+    }
+
+    /// <summary>
+    /// 设置页自检：打开真实档案，打印打开前后的私有工作集，10 秒后自动关闭。
+    /// 验收「打开时 ≤ 8 MB 增量」用它取证。
+    /// </summary>
+    private static int RunSettingsDemo()
+    {
+        ApplicationConfiguration.Initialize();
+
+        var repository = new ShortcutRepository(
+            Path.Combine(AppContext.BaseDirectory, "Data", "apps"),
+            HudApp.DefaultUserAppsDirectory);
+
+        var process = Process.GetCurrentProcess();
+        process.Refresh();
+        long before = process.PrivateMemorySize64;
+
+        var form = new SettingsForm(repository, () => { });
+        form.Shown += (_, _) =>
+        {
+            process.Refresh();
+            long after = process.PrivateMemorySize64;
+            Console.WriteLine($"[settings] before={before / 1024} KB after={after / 1024} KB "
+                              + $"delta={(after - before) / 1024} KB");
+        };
+
+        if (Environment.GetEnvironmentVariable("HOTKEYHUD_SETTINGS_EDIT") == "1")
+        {
+            var edit = new System.Windows.Forms.Timer { Interval = 1500 };
+            edit.Tick += (_, _) =>
+            {
+                edit.Stop();
+                form.DemoEdit(0, 1); // 第一行 + 蓝色，展示编辑态
+            };
+            edit.Start();
+        }
+
+        var timer = new System.Windows.Forms.Timer { Interval = 10_000 };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            form.Close();
+        };
+        timer.Start();
+
+        Application.Run(form);
+        process.Refresh();
+        Console.WriteLine($"[settings] after close={process.PrivateMemorySize64 / 1024} KB");
+        return 0;
     }
 
     private static int RunTray()
@@ -244,7 +301,7 @@ internal static class Program
     private sealed record Options(
         bool SelfTest, bool TypingTest, bool IntegrationTest, bool RenderGallery,
         bool SuppressionTest, bool ShellTest, bool S6Test, bool HookProbe, bool MakeIcon,
-        bool PagingTest, bool ProbeSingleInstance, bool Diag, bool AdapterCheck, string? ScreenShot, string? TemplatePreview,
+        bool PagingTest, bool ProbeSingleInstance, bool Diag, bool AdapterCheck, string? ScreenShot, string? TemplatePreview, bool SettingsDemo,
         bool Demo, int Seconds, string? Capture, string? Out);
 
     private static Options ParseOptions(string[] args)
@@ -264,6 +321,7 @@ internal static class Program
         bool adapterCheck = false;
         string? screenShot = null;
         string? templatePreview = null;
+        bool settingsDemo = false;
         bool demo = false;
         int seconds = 30;
         string? capture = null;
@@ -326,6 +384,11 @@ internal static class Program
                 case "--probe-single-instance":
                     RequireDiagnosticsBuild(arg);
                     probeSingleInstance = true;
+                    break;
+
+                case "--settings-demo":
+                    RequireDiagnosticsBuild(arg);
+                    settingsDemo = true;
                     break;
 
                 case "--adapter-check":
@@ -397,7 +460,7 @@ internal static class Program
                     {
                         throw new ArgumentException(
                             $"未知参数 \"{arg}\"。可用：--selftest --typing-test --integration-test "
-                            + "--render-gallery --suppression-test --shell-test --s6-test --hook-probe --make-icon --paging-test --diag --adapter-check --screen-shot=PATH --template-preview=EXE --demo "
+                            + "--render-gallery --suppression-test --shell-test --s6-test --hook-probe --make-icon --paging-test --diag --adapter-check --screen-shot=PATH --template-preview=EXE --settings-demo --demo "
                             + "--seconds=N --capture=PATH --out=DIR"
                             + "（注意值必须用 = 连接）");
                     }
@@ -407,7 +470,7 @@ internal static class Program
         }
 
         return new Options(selfTest, typingTest, integrationTest, renderGallery, suppressionTest,
-            shellTest, s6Test, hookProbe, makeIcon, pagingTest, probeSingleInstance, diag, adapterCheck, screenShot, templatePreview, demo, seconds, capture, output);
+            shellTest, s6Test, hookProbe, makeIcon, pagingTest, probeSingleInstance, diag, adapterCheck, screenShot, templatePreview, settingsDemo, demo, seconds, capture, output);
     }
 
     /// <summary>只接受 <c>--name=value</c>；空格分隔形式一律落到「未知参数」分支报错。</summary>

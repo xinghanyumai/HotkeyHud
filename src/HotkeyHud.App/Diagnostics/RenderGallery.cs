@@ -154,6 +154,7 @@ internal static class RenderGallery
             return $"{before.Width}×{before.Height} 连按 5 个组合，GetWindowRect 保持不变";
         });
 
+        Case("Gallery08 条目自选色只染键帽", () => ColorizedKeycap(outputDirectory));
         Case("Gallery07 首帧 <25ms、高亮切换 <8ms", () =>
         {
             // 全量重绘：换一份等价的模型实例强制缓存未命中（尺寸相同，排除位图重建的干扰）
@@ -202,6 +203,65 @@ internal static class RenderGallery
         });
 
         return Flush();
+    }
+
+    /// <summary>§2.5：自选色只染键帽描边与键帽文字，动作文案仍是主色。</summary>
+    private static string ColorizedKeycap(string outputDirectory)
+    {
+        const string hex = "#FF9F45";
+        var model = new HudModel
+        {
+            AppName = "色样",
+            Modifier = Modifier.Ctrl,
+            Groups = new[]
+            {
+                new HudGroup
+                {
+                    Title = "编辑",
+                    Items = new[]
+                    {
+                        new HudItem { Keys = "K", Action = "彩色键帽", Color = hex },
+                        new HudItem { Keys = "L", Action = "默认色" },
+                    },
+                },
+            },
+            TotalCount = 2,
+            HasProfile = true,
+            PageIndex = 0,
+            PageCount = 1,
+        };
+
+        float scale = 1f;
+        Size size = HudPanel.Measure(model, scale, 1920);
+        using var bitmap = new Bitmap(size.Width, size.Height);
+        using (Graphics graphics = Graphics.FromImage(bitmap))
+        {
+            bitmap.MakeTransparent();
+            graphics.Clear(Color.FromArgb(255, 0x16, 0x18, 0x1D));
+            HudPanel.DrawBase(graphics, model, scale);
+        }
+
+        Color target = Color.FromArgb(0xFF, 0x9F, 0x45);
+        int hits = 0;
+        for (int y = 0; y < size.Height; y++)
+        {
+            for (int x = 0; x < size.Width; x++)
+            {
+                Color pixel = bitmap.GetPixel(x, y);
+                if (Math.Abs(pixel.R - target.R) <= 6
+                    && Math.Abs(pixel.G - target.G) <= 6
+                    && Math.Abs(pixel.B - target.B) <= 6)
+                {
+                    hits++;
+                }
+            }
+        }
+
+        Require(hits > 50, $"面板里找不到自选色像素（命中 {hits} 个）");
+
+        string path = Path.Combine(outputDirectory, "05-color.png");
+        bitmap.Save(path);
+        return $"自选色像素 {hits} 个，截图 {Path.GetFileName(path)}";
     }
 
     private static string Capture(

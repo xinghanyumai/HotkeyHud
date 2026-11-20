@@ -18,6 +18,9 @@ public sealed class ShortcutEntry
 
     public string? Group { get; init; }
 
+    /// <summary>键帽颜色（8 个预设之一，见 <see cref="HudColors"/>）。null = 用修饰键默认色。</summary>
+    public string? Color { get; init; }
+
     public Combo Combo { get; init; }
 
     public bool IsValid { get; init; }
@@ -31,6 +34,9 @@ public sealed class AppShortcutProfile
 
     public string[] ProcessNames { get; init; } = Array.Empty<string>();
 
+    /// <summary>是否已有用户副本（<c>%APPDATA%\HotkeyHud\apps\&lt;app&gt;.json</c>）。</summary>
+    public bool IsUserOwned { get; init; }
+
     public List<ShortcutEntry> Shortcuts { get; init; } = new();
 }
 
@@ -40,6 +46,9 @@ public sealed class HudItem
     public string Keys { get; init; } = string.Empty;
 
     public string Action { get; init; } = string.Empty;
+
+    /// <summary>键帽颜色（预设色，null = 修饰键默认色）。</summary>
+    public string? Color { get; init; }
 }
 
 public sealed class HudGroup

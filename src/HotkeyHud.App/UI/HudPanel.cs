@@ -360,14 +360,36 @@ internal static class HudPanel
                     Math.Max(measured + KeycapPadX * 2 * scale, KeycapMinWidth * scale),
                     keycapMaxWidth);
 
-                var keycap = new RectangleF(cellX, keycapY, keycapWidth, KeycapHeight * scale);
-                using (var keycapPath = RoundedRect(keycap, KeycapRadius * scale))
-                {
-                    graphics.FillPath(KeycapBrush, keycapPath);
-                    graphics.DrawPath(KeycapPen, keycapPath);
-                }
+                // 条目自选颜色：只影响键帽描边与键帽文字，不动动作文案（§2.5）
+                Color? custom = ParseColor(item.Color);
+                Pen keycapPen = custom is null ? KeycapPen : new Pen(custom.Value, 1f);
+                SolidBrush keyTextBrush = custom is null
+                    ? TextPrimaryBrush
+                    : new SolidBrush(custom.Value);
 
-                graphics.DrawString(keyText, keyFont, TextPrimaryBrush, keycap, CenteredEllipsis);
+                var keycap = new RectangleF(cellX, keycapY, keycapWidth, KeycapHeight * scale);
+                try
+                {
+                    using (var keycapPath = RoundedRect(keycap, KeycapRadius * scale))
+                    {
+                        graphics.FillPath(KeycapBrush, keycapPath);
+                        graphics.DrawPath(keycapPen, keycapPath);
+                    }
+
+                    graphics.DrawString(keyText, keyFont, keyTextBrush, keycap, CenteredEllipsis);
+                }
+                finally
+                {
+                    if (!ReferenceEquals(keycapPen, KeycapPen))
+                    {
+                        keycapPen.Dispose();
+                    }
+
+                    if (!ReferenceEquals(keyTextBrush, TextPrimaryBrush))
+                    {
+                        keyTextBrush.Dispose();
+                    }
+                }
 
                 float textX = keycap.Right + 6f * scale;
                 graphics.DrawString(
@@ -625,6 +647,24 @@ internal static class HudPanel
         }
 
         return (columns, rows);
+    }
+
+    /// <summary>预设色值 → Color；非法或未设置返回 null（用修饰键默认色）。</summary>
+    private static Color? ParseColor(string? hex)
+    {
+        if (string.IsNullOrWhiteSpace(hex))
+        {
+            return null;
+        }
+
+        string text = hex.Trim().TrimStart('#');
+        if (text.Length != 6
+            || !int.TryParse(text, System.Globalization.NumberStyles.HexNumber, null, out int value))
+        {
+            return null;
+        }
+
+        return Color.FromArgb(255, (value >> 16) & 0xFF, (value >> 8) & 0xFF, value & 0xFF);
     }
 
     private static void Append(List<Cell> cells, Block block)

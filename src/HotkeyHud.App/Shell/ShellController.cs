@@ -17,6 +17,7 @@ public sealed class ShellController : IDisposable
     private readonly TrayIcon _tray;
 
     private AppConfig _config;
+    private SettingsForm? _settings;
     private bool _disposed;
 
     public ShellController(string? configDirectory = null, string? appsDirectory = null)
@@ -29,7 +30,7 @@ public sealed class ShellController : IDisposable
             config: _config,
             userAppsDirectory: Path.Combine(_store.DirectoryPath, "apps"));
         _tray = new TrayIcon(
-            TogglePause, AddAppShortcuts, Reload, OpenConfigDirectory, SetAutoStart, RequestExit);
+            TogglePause, AddAppShortcuts, ShowSettings, Reload, OpenConfigDirectory, SetAutoStart, RequestExit);
         _tray.RefreshRequested += PushTrayState;
 
         PushTrayState();
@@ -77,6 +78,29 @@ public sealed class ShellController : IDisposable
         {
             _tray.ShowBalloon("配置已修正", string.Join("；", _store.LastRepairs), warning: true);
         }
+    }
+
+    /// <summary>
+    /// 托盘「设置…」：非模态单窗体，关闭即 Dispose，不常驻。
+    /// 同一时刻只开一个——再点就把已有窗口拉到前面。
+    /// </summary>
+    public void ShowSettings()
+    {
+        if (_settings is { IsDisposed: false } existing)
+        {
+            existing.Activate();
+            return;
+        }
+
+        var form = new SettingsForm(_hud.Repository, Reload);
+        form.AddAppRequested += () =>
+        {
+            AddAppShortcuts();
+            form.ReloadApps();
+        };
+
+        _settings = form;
+        form.Show();
     }
 
     /// <summary>
@@ -231,6 +255,8 @@ public sealed class ShellController : IDisposable
 
         _disposed = true;
         _tray.RefreshRequested -= PushTrayState;
+        _settings?.Dispose();
+        _settings = null;
         _tray.Dispose();
         _hud.Dispose();
     }

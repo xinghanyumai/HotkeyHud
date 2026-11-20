@@ -37,7 +37,7 @@ internal static class ShellTest
             // 无控制台时忽略
         }
 
-        Case("Shell01 托盘菜单 6 项可用", TrayMenuComplete);
+        Case("Shell01 托盘菜单 7 项可用", TrayMenuComplete);
         Case("Shell02 暂停生效", PauseWorks);
         Case("Shell03 暂停与游戏抑制互不覆盖", PauseSurvivesGameSuppression);
         Case("Shell04 dwellMs 真的生效", DwellMsTakesEffect);
@@ -48,6 +48,7 @@ internal static class ShellTest
         Case("Shell09 用户档案：覆盖内置 / 降权豁免 / 新增生效", UserProfileMerges);
         Case("Shell10 适配器与模板：VS Code / JetBrains / 模板可被加载", AdaptersAndTemplate);
         Case("Shell11 钩子只对按下翻页（flags 偏移 8）", HookFlagsParsed);
+        Case("Shell12 设置页：只读展示 / 按键录入 / 内置转用户副本 / 颜色", SettingsPageWorks);
 
         return Flush();
     }
@@ -56,7 +57,7 @@ internal static class ShellTest
 
     private static string TrayMenuComplete()
     {
-        using var tray = new TrayIcon(() => { }, () => { }, () => { }, () => { }, _ => { }, () => { });
+        using var tray = new TrayIcon(() => { }, () => { }, () => { }, () => { }, () => { }, _ => { }, () => { });
 
         tray.Update(paused: false, suppressed: false, reason: "", foreground: "chrome.exe", autoStart: false);
         string normal = tray.StatusText;
@@ -64,12 +65,13 @@ internal static class ShellTest
 
         tray.Update(paused: true, suppressed: true, reason: "手动暂停", foreground: "chrome.exe", autoStart: true);
         string paused = tray.StatusText;
-        Require(actions.Count == 6,
-            $"可点击菜单项应为 6 个（暂停/添加应用快捷键/重载/打开配置/开机自启/退出），实际 {actions.Count}："
+        Require(actions.Count == 7,
+            $"可点击菜单项应为 7 个（暂停/添加应用快捷键/设置/重载/打开配置/开机自启/退出），实际 {actions.Count}："
             + string.Join("、", actions));
         Require(actions.Contains("暂停") && actions.Contains("添加应用快捷键…")
-                && actions.Contains("重载数据") && actions.Contains("打开配置目录")
-                && actions.Contains("开机自启") && actions.Contains("退出"),
+                && actions.Contains("设置…") && actions.Contains("重载数据")
+                && actions.Contains("打开配置目录") && actions.Contains("开机自启")
+                && actions.Contains("退出"),
             $"菜单项不全：{string.Join("、", actions)}");
 
         Require(normal.Contains("正常") && normal.Contains("chrome.exe"),
@@ -78,7 +80,7 @@ internal static class ShellTest
             $"抑制态状态行不对：\"{paused}\"");
         Require(tray.PauseItemText == "恢复", $"暂停后菜单项应显示「恢复」，实际 \"{tray.PauseItemText}\"");
 
-        return $"6 个可点击项 + 状态项；正常=\"{normal}\"，暂停=\"{paused}\"";
+        return $"7 个可点击项 + 状态项；正常=\"{normal}\"，暂停=\"{paused}\"";
     }
 
     private static string PauseWorks()
@@ -382,6 +384,90 @@ internal static class ShellTest
         }
 
         return "按下通知 1 次、松开不通知，两者都返回 1；非翻页键放行";
+    }
+
+    private static string SettingsPageWorks()
+    {
+        using var builtin = new TempDir();
+        using var user = new TempDir();
+
+        builtin.Write("demo.json", """
+            {
+              "app": "demo",
+              "displayName": "演示应用",
+              "processNames": ["demo.exe"],
+              "shortcuts": [
+                { "keys": "Ctrl+K", "action": "插入链接", "group": "编辑" },
+                { "keys": "Ctrl+Shift+K", "action": "插入图片", "group": "编辑" }
+              ]
+            }
+            """);
+
+        var repository = new ShortcutRepository(builtin.Path, user.Path);
+        int saved = 0;
+
+        using var form = new SettingsForm(repository, () => saved++);
+
+        // ① 只读展示：能列出应用与条目
+        Require(form.CurrentApp == "demo", $"默认选中应用不符：{form.CurrentApp ?? "null"}");
+        Require(form.RowCount == 2, $"应展示 2 条，实际 {form.RowCount}");
+
+        // ② 按键录入：Ctrl+Alt+F
+        Require(SettingsForm.TryBuildCombo(
+                System.Windows.Forms.Keys.Control | System.Windows.Forms.Keys.Alt,
+                System.Windows.Forms.Keys.F,
+                out Combo captured),
+            "按键录入没认出 Ctrl+Alt+F");
+        Require(HotkeyHud.Core.Keys.Format(captured) == "Ctrl+Alt+F", $"键位文本不符：{HotkeyHud.Core.Keys.Format(captured)}");
+        Require(!SettingsForm.TryBuildCombo(
+                System.Windows.Forms.Keys.Control, System.Windows.Forms.Keys.ControlKey, out _),
+            "只按修饰键不应产出组合");
+
+        // ③ 内置转用户副本：写用户目录，安装目录的文件必须原封不动
+        string builtinFile = Path.Combine(builtin.Path, "demo.json");
+        string before = File.ReadAllText(builtinFile);
+
+        AppShortcutProfile profile = repository.FindByProcess("demo")!;
+        var edited = new AppShortcutProfile
+        {
+            App = profile.App,
+            DisplayName = profile.DisplayName,
+            ProcessNames = profile.ProcessNames,
+            IsUserOwned = true,
+            Shortcuts = new List<ShortcutEntry>
+            {
+                new()
+                {
+                    Source = ShortcutSource.User,
+                    Keys = "Ctrl+Alt+F",
+                    Action = "格式化文档",
+                    Group = "编辑",
+                    Color = HudColors.Presets[1].Hex,
+                    Combo = captured,
+                    IsValid = true,
+                },
+            },
+        };
+
+        string userFile = repository.SaveUserProfile(edited);
+        Require(File.ReadAllText(builtinFile) == before, "内置档案被改动了（只许写用户目录）");
+        Require(userFile.StartsWith(user.Path, StringComparison.OrdinalIgnoreCase),
+            $"用户副本写错位置：{userFile}");
+
+        AppShortcutProfile? after = repository.FindByProcess("demo");
+        Require(after is not null && after.IsUserOwned, "保存后应标记为「我的」");
+        Require(after!.Shortcuts.Any(x => x.Keys == "Ctrl+Alt+F" && x.Action == "格式化文档"),
+            "用户副本的条目没进合并结果");
+        Require(after.Shortcuts.Any(x => x.Keys == "Ctrl+K"), "内置里未被覆盖的条目应保留");
+        Require(saved == 0, "保存回调应由界面触发，这里不应被调用");
+
+        // ④ 颜色：只接受预设，其他按默认
+        Require(HudColors.Normalize("#4C8DFF") == "#4C8DFF", "预设色应被接受");
+        Require(HudColors.Normalize("蓝") == "#4C8DFF", "预设色名应被接受");
+        Require(HudColors.Normalize("#123456") is null, "非预设色应回落默认");
+        Require(HudColors.DisplayName(null) == HudColors.Default, "空值应显示「默认」");
+
+        return $"展示 {form.RowCount} 条 → 录入 Ctrl+Alt+F → 写用户副本（内置未变）→ 颜色白名单生效";
     }
 
     private static string CorruptConfigHandled()
