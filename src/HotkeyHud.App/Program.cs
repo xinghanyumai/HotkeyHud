@@ -104,6 +104,13 @@ internal static class Program
                 return RunAdapterCheck();
             }
 
+            if (options.TemplatePreview is { } previewExe)
+            {
+                Console.OutputEncoding = new UTF8Encoding(false);
+                Console.WriteLine(UserApps.Template(previewExe));
+                return 0;
+            }
+
             if (options.ScreenShot is { } shotPath)
             {
                 ApplicationConfiguration.Initialize();
@@ -237,7 +244,7 @@ internal static class Program
     private sealed record Options(
         bool SelfTest, bool TypingTest, bool IntegrationTest, bool RenderGallery,
         bool SuppressionTest, bool ShellTest, bool S6Test, bool HookProbe, bool MakeIcon,
-        bool PagingTest, bool ProbeSingleInstance, bool Diag, bool AdapterCheck, string? ScreenShot,
+        bool PagingTest, bool ProbeSingleInstance, bool Diag, bool AdapterCheck, string? ScreenShot, string? TemplatePreview,
         bool Demo, int Seconds, string? Capture, string? Out);
 
     private static Options ParseOptions(string[] args)
@@ -256,6 +263,7 @@ internal static class Program
         bool diag = false;
         bool adapterCheck = false;
         string? screenShot = null;
+        string? templatePreview = null;
         bool demo = false;
         int seconds = 30;
         string? capture = null;
@@ -355,6 +363,16 @@ internal static class Program
 
                         capture = capturePath;
                     }
+                    else if (TryReadValue(arg, "--template-preview", out string? previewPath))
+                    {
+                        RequireDiagnosticsBuild(arg);
+                        if (string.IsNullOrWhiteSpace(previewPath))
+                        {
+                            throw new ArgumentException("--template-preview 需要 exe 路径");
+                        }
+
+                        templatePreview = previewPath;
+                    }
                     else if (TryReadValue(arg, "--screen-shot", out string? shotPath))
                     {
                         RequireDiagnosticsBuild(arg);
@@ -379,7 +397,7 @@ internal static class Program
                     {
                         throw new ArgumentException(
                             $"未知参数 \"{arg}\"。可用：--selftest --typing-test --integration-test "
-                            + "--render-gallery --suppression-test --shell-test --s6-test --hook-probe --make-icon --paging-test --diag --adapter-check --screen-shot=PATH --demo "
+                            + "--render-gallery --suppression-test --shell-test --s6-test --hook-probe --make-icon --paging-test --diag --adapter-check --screen-shot=PATH --template-preview=EXE --demo "
                             + "--seconds=N --capture=PATH --out=DIR"
                             + "（注意值必须用 = 连接）");
                     }
@@ -389,7 +407,7 @@ internal static class Program
         }
 
         return new Options(selfTest, typingTest, integrationTest, renderGallery, suppressionTest,
-            shellTest, s6Test, hookProbe, makeIcon, pagingTest, probeSingleInstance, diag, adapterCheck, screenShot, demo, seconds, capture, output);
+            shellTest, s6Test, hookProbe, makeIcon, pagingTest, probeSingleInstance, diag, adapterCheck, screenShot, templatePreview, demo, seconds, capture, output);
     }
 
     /// <summary>只接受 <c>--name=value</c>；空格分隔形式一律落到「未知参数」分支报错。</summary>
