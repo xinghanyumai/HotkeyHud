@@ -264,6 +264,66 @@
       "keys": "Ctrl+Alt+Tab",
       "action": "切换器常开",
       "group": "系统"
+    },
+    {
+      "keys": "Ctrl+C",
+      "action": "复制",
+      "group": "系统"
+    },
+    {
+      "keys": "Ctrl+V",
+      "action": "粘贴",
+      "group": "系统"
+    },
+    {
+      "keys": "Ctrl+X",
+      "action": "剪切",
+      "group": "系统"
+    },
+    {
+      "keys": "Ctrl+Z",
+      "action": "撤销",
+      "group": "系统"
+    },
+    {
+      "keys": "Ctrl+Y",
+      "action": "重做",
+      "group": "系统"
+    },
+    {
+      "keys": "Ctrl+A",
+      "action": "全选",
+      "group": "系统"
+    },
+    {
+      "keys": "Ctrl+S",
+      "action": "保存",
+      "group": "系统"
+    },
+    {
+      "keys": "Ctrl+F",
+      "action": "查找",
+      "group": "系统"
+    },
+    {
+      "keys": "Ctrl+P",
+      "action": "打印",
+      "group": "系统"
+    },
+    {
+      "keys": "Ctrl+N",
+      "action": "新建",
+      "group": "系统"
+    },
+    {
+      "keys": "Ctrl+O",
+      "action": "打开",
+      "group": "系统"
+    },
+    {
+      "keys": "Ctrl+W",
+      "action": "关闭",
+      "group": "系统"
     }
   ]
 }

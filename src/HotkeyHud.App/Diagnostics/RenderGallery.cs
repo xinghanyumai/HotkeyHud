@@ -66,7 +66,7 @@ internal static class RenderGallery
             Modifier = Modifier.Ctrl,
             Groups = Array.Empty<HudGroup>(),
             TotalCount = 0,
-            HiddenByKnownCount = 0,
+            DeferredKnownCount = 0,
             HasProfile = false,
         };
         HudModel longList = Build(repository, known, "Code.exe", "VS Code");
@@ -86,10 +86,10 @@ internal static class RenderGallery
             Capture(overlay, empty, null, Path.Combine(outputDirectory, "03-empty.png"),
                 expectText: false));
 
-        Case("Gallery05 长列表截断", () =>
+        Case("Gallery05 多页与分页页脚", () =>
         {
             Require(longList.TotalCount > HudPanel.MaxVisibleItems,
-                $"样本条目数 {longList.TotalCount} 未超过 {HudPanel.MaxVisibleItems}，无法验证截断");
+                $"样本条目数 {longList.TotalCount} 未超过 {HudPanel.MaxVisibleItems}，无法验证分页");
             string detail = Capture(overlay, longList, null,
                 Path.Combine(outputDirectory, "04-long-list.png"), expectText: true);
 
@@ -97,8 +97,10 @@ internal static class RenderGallery
                 ? $"第 1/{longList.PageCount} 页 · ↑↓ 翻页 · 松开 Ctrl 隐藏"
                 : $"共 {longList.TotalCount} 条 · 松开 Ctrl 隐藏";
 
-            Require(overlay.LastItemCount == HudPanel.MaxVisibleItems,
-                $"实际画出 {overlay.LastItemCount} 条，期望 {HudPanel.MaxVisibleItems} 条");
+            // §3.2 v1.7 起分页按组对齐：一页可能不足 12 条（整组放不下就换页），
+            // 所以这里断言的是「不超过上限」，不再要求刚好 12 条
+            Require(overlay.LastItemCount is > 0 and <= HudPanel.MaxVisibleItems,
+                $"实际画出 {overlay.LastItemCount} 条，应在 1–{HudPanel.MaxVisibleItems} 之间");
             Require(HudPanel.FooterText(longList) == expected,
                 $"底部文案不符：\"{HudPanel.FooterText(longList)}\"，期望 \"{expected}\"");
 
@@ -113,7 +115,7 @@ internal static class RenderGallery
             double logicalHeight = LogicalHeight(overlay);
             double limit = Math.Min(MaxPanelHeightCap, WorkAreaLogicalHeight(overlay) * MaxPanelHeightRatio);
             Require(logicalHeight <= limit,
-                $"12 条面板高 {logicalHeight:F0} 逻辑 px，超过上限 {limit:F0}"
+                $"面板高 {logicalHeight:F0} 逻辑 px，超过上限 {limit:F0}"
                 + $"（min({MaxPanelHeightCap}, 屏高×{MaxPanelHeightRatio:P0})）");
 
             // §6.1 v1.3：三列高度差 ≤ 2 行，避免「一列顶满、两列半空」的形状

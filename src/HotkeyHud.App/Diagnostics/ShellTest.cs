@@ -156,10 +156,20 @@ internal static class ShellTest
         FocusWindow(normal.Handle);
         hud.Suppressed = false;
 
-        // 面板里的条目：Ctrl+C 默认被过滤掉，关闭过滤后必须出现
         KeyDown(VkControl);
         Require(PumpTracking(500, hud), "前置条件不成立：面板未弹出");
         Require(hud.CurrentLabel.Contains("Ctrl"), $"label 异常：\"{hud.CurrentLabel}\"");
+
+        HudModel? model = hud.CurrentModel;
+        Require(model is not null, "拿不到面板模型");
+
+        // §4.3 v1.7：名单为空 → 没有任何条目被降权，也就没有「通用」组
+        Require(model.DeferredKnownCount == 0,
+            $"knownShortcuts=[] 时不应有降权条目，实际 {model.DeferredKnownCount}");
+        Require(!model.Groups.Any(g => g.Title == HudBuilder.GeneralGroupTitle),
+            "knownShortcuts=[] 时不应出现「通用」组");
+        Require(model.Groups.Any(g => g.Items.Any(i => i.Keys == "C")),
+            "Ctrl+C 应出现在应用自己的组里");
 
         KeyDown(VkC);
         Pump(60);
@@ -169,11 +179,11 @@ internal static class ShellTest
         KeyUp(VkControl);
         Pump(150);
 
-        Require(stillVisible, "knownShortcuts=[] 后按 Ctrl+C 仍然立即收起（说明过滤没关掉）");
+        Require(stillVisible, "knownShortcuts=[] 后按 Ctrl+C 仍应立即收起（说明配置没接上）");
         Require(highlighted == new Combo(Modifier.Ctrl, VkC),
             $"按 Ctrl+C 后未高亮该条：{highlighted?.ToString() ?? "null"}");
 
-        return "knownShortcuts=[] 后 Ctrl+C 出现在列表且会高亮";
+        return "knownShortcuts=[] 后无「通用」组，Ctrl+C 在应用组内且会高亮";
     }
 
     private static string CorruptConfigHandled()

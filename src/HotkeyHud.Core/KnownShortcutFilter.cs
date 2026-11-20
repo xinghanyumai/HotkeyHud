@@ -1,8 +1,8 @@
 namespace HotkeyHud.Core;
 
 /// <summary>
-/// §4 熟记名单。既用于列表过滤（<see cref="IsKnown(Combo)"/>），也用于闪烁抑制
-/// （由 <see cref="TriggerStateMachine.FlashPredicate"/> 接上），两个作用点缺一不可。
+/// §4 熟记名单。v1.7 起只用于**降权**：命中的组合不剔除，而是归入
+/// <see cref="HudBuilder.GeneralGroupTitle"/> 组排到最后一页，按下时照常高亮。
 /// </summary>
 public sealed class KnownShortcutFilter
 {
@@ -48,9 +48,4 @@ public sealed class KnownShortcutFilter
     public bool IsKnown(string text)
         => Keys.TryParse(text, out Combo combo) && _combos.Contains(combo);
 
-    /// <summary>
-    /// 直接接给 <see cref="TriggerStateMachine.FlashPredicate"/> 用。
-    /// 提供这个入口是为了让 §4.3 的第二个作用点（闪烁抑制）不会被接线时漏掉。
-    /// </summary>
-    public bool AllowFlash(Combo combo) => !IsKnown(combo);
 }

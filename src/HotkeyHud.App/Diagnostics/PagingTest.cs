@@ -229,12 +229,14 @@ internal static class PagingTest
 
         string processName = Process.GetCurrentProcess().ProcessName;
         var shortcuts = new List<string>();
-        // 40 条 → 熟记名单剔掉十几个后仍有 3 页以上
+        // 40 条 → 含熟记名单里的通用键（会被降权到「通用」组），页数 ≥ 3
         int count = many ? 40 : 3;
         for (int i = 0; i < count; i++)
         {
-            string key = i < 26
-                ? $"Ctrl+{(char)('A' + i)}"
+            // 单页样本刻意避开熟记名单：否则通用组会另起一页，就不是单页了
+            string key = !many
+                ? $"Ctrl+{(char)('K' + i)}"
+                : i < 26 ? $"Ctrl+{(char)('A' + i)}"
                 : i < 36 ? $"Ctrl+{i - 26}" : $"Ctrl+F{i - 35}";
             shortcuts.Add($"{{ \"keys\": \"{key}\", \"action\": \"动作 {i + 1}\", \"group\": \"第 {i / 6 + 1} 组\" }}");
         }

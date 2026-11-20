@@ -55,7 +55,7 @@ public sealed class HudApp : IDisposable
         _watcher = new ForegroundWatcher();
         _input = new RawInputSource();
         _overlay = new OverlayForm();
-        _machine = new TriggerStateMachine(Config.DwellMs) { FlashPredicate = _known.AllowFlash };
+        _machine = new TriggerStateMachine(Config.DwellMs);
         _timer = new System.Windows.Forms.Timer { Interval = TimerIntervalMs };
         _suppressTimer = new System.Windows.Forms.Timer { Interval = SuppressPollIntervalMs };
 
@@ -150,7 +150,6 @@ public sealed class HudApp : IDisposable
 
         _repository.Reload();
         _known = new KnownShortcutFilter(config.KnownShortcuts);
-        _machine.FlashPredicate = _known.AllowFlash;
         _machine.DwellMs = config.DwellMs;
 
         RefreshSuppression();

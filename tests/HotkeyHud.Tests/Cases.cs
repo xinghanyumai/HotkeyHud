@@ -18,9 +18,9 @@ internal static class Cases
         Program.Run("Case03 按住 90ms 后松开，全程无事件", Case03_ShortPressNeverShows);
         Program.Run("Case04 Ctrl 后 60ms 按 C，面板不出现", Case04_ComboPressCancelsArm);
         Program.Run("Case05 取消后全部松开再长按仍能弹出", Case05_CanRearmAfterCancel);
-        Program.Run("Case06 面板显示时按 Ctrl+C 立即收起且不高亮", Case06_KnownComboHidesImmediately);
+        Program.Run("Case06 面板显示时按 Ctrl+C 高亮并 500ms 后收起（v1.7）", Case06_KnownComboHidesImmediately);
         Program.Run("Case07 面板显示时按 Ctrl+K 高亮并 500ms 后收起", Case07_UnknownComboFlashes);
-        Program.Run("Case08 熟记名单同时作用于列表与计数", Case08_KnownFilteredFromList);
+        Program.Run("Case08 熟记条目降权到「通用」组并排最后", Case08_KnownDeferredToGeneralGroup);
         Program.Run("Case09 只显示当前应用条目", Case09_OnlyForegroundAppEntries);
         Program.Run("Case10 未收录应用不混入其他条目", Case10_UnknownAppHasNoEntries);
         Program.Run("Case11 双修饰键条目不出现在单修饰键面板", Case11_MultiModifierExcluded);
@@ -31,6 +31,7 @@ internal static class Cases
         Program.Run("Case16 前台切换后修饰键状态被清空", Case16_ForegroundChangeClearsModifiers);
         Program.Run("Case17 默认长按阈值为 450ms", Case17_DefaultDwellIs450);
         Program.Run("Case18 未收录应用：非 Win 走引导，Win 仍显示系统档案", Case18_UnrecordedGuidance);
+        Program.Run("Case19 桌面不算游戏（Win+D 后不抑制）", Case19_DesktopNotSuppressed);
     }
 
     // ---------------- §5 状态机 ----------------
@@ -145,12 +146,12 @@ internal static class Cases
 
     private static void Case06_KnownComboHidesImmediately()
     {
-        var filter = new KnownShortcutFilter();
-        var sm = new TriggerStateMachine(dwellMs: 300) { FlashPredicate = combo => !filter.IsKnown(combo) };
+        // §4.3 v1.7：熟记名单不再抑制闪烁——Ctrl+C 与普通组合走同一条路
+        var sm = new TriggerStateMachine(dwellMs: 300);
         int hides = 0;
-        int flashes = 0;
+        Combo? flashed = null;
         sm.HideRequested += () => hides++;
-        sm.ComboFlashed += _ => flashes++;
+        sm.ComboFlashed += combo => flashed = combo;
 
         sm.OnKey(new KeyEvent(Keys.VkControl, true, 0));
         sm.OnTick(300);
@@ -158,15 +159,18 @@ internal static class Cases
 
         sm.OnKey(new KeyEvent(VkC, true, 400));
 
-        Check.Equal(1, hides, "Ctrl+C 应立即收起");
-        Check.Equal(0, flashes, "Ctrl+C 不应触发高亮");
-        Check.Equal(HudState.Idle, sm.State, "应直接回 Idle，不能停留 500ms");
+        Check.Equal(new Combo(Modifier.Ctrl, VkC), flashed, "Ctrl+C 应触发高亮");
+        Check.Equal(0, hides, "高亮期间不应收起");
+        Check.Equal(HudState.Flashing, sm.State, "应进入 Flashing");
+
+        sm.OnTick(900);
+        Check.Equal(1, hides, "500ms 后应收起");
+        Check.Equal(HudState.Idle, sm.State, "应回到 Idle");
     }
 
     private static void Case07_UnknownComboFlashes()
     {
-        var filter = new KnownShortcutFilter();
-        var sm = new TriggerStateMachine(dwellMs: 300) { FlashPredicate = combo => !filter.IsKnown(combo) };
+        var sm = new TriggerStateMachine(dwellMs: 300);
         int hides = 0;
         Combo? flashed = null;
         sm.HideRequested += () => hides++;
@@ -189,20 +193,32 @@ internal static class Cases
 
     // ---------------- §4 / §3 构建 ----------------
 
-    private static void Case08_KnownFilteredFromList()
+    private static void Case08_KnownDeferredToGeneralGroup()
     {
         var profile = Profile("test", "测试应用",
-            Entry("Ctrl+C", "复制"),
-            Entry("Ctrl+S", "保存"),
-            Entry("Ctrl+K", "链接"));
+            Entry("Ctrl+C", "复制", "编辑"),
+            Entry("Ctrl+S", "保存", "文件"),
+            Entry("Ctrl+K", "链接", "编辑"));
 
-        var model = HudBuilder.Build(profile, Modifier.Ctrl, new KnownShortcutFilter());
-        var items = model.Groups.SelectMany(g => g.Items).ToList();
+        var first = HudBuilder.Build(profile, Modifier.Ctrl, new KnownShortcutFilter());
 
-        Check.Equal(1, model.TotalCount, "可见条目数应为 1");
-        Check.Equal(2, model.HiddenByKnownCount, "被熟记名单剔除的应为 2");
-        Check.Equal(1, items.Count, "列表里只应剩一条");
-        Check.Equal("K", items[0].Keys, "键帽只显示非修饰键：剩下的应是 K");
+        Check.Equal(3, first.TotalCount, "v1.7：熟记条目保留，总数应为 3");
+        Check.Equal(2, first.DeferredKnownCount, "被降权的应为 2");
+        Check.Equal(2, first.PageCount, "通用组强制另起一页，共 2 页");
+
+        // 第 1 页只有应用组；文件组只有一条 Ctrl+S，被降权后该组整体消失
+        Check.Equal(1, first.Groups.Count, "第 1 页应只有「编辑」一组");
+        Check.Equal("编辑", first.Groups[0].Title, "编辑组应排最前");
+        Check.True(first.Groups[0].Items.Any(i => i.Keys == "K"), "编辑组应含 K");
+        Check.False(first.Groups.Any(g => g.Title == HudBuilder.GeneralGroupTitle),
+            "通用组不得出现在第 1 页");
+
+        // 最后一页是通用组
+        var last = HudBuilder.Build(profile, systemProfile: null, Modifier.Ctrl, new KnownShortcutFilter(), pageIndex: 1);
+        Check.Equal(HudBuilder.GeneralGroupTitle, last.Groups[0].Title, "最后一页应是通用组");
+        Check.Equal(2, last.Groups[0].Items.Count, "通用组应有 2 条");
+        Check.True(last.Groups[0].Items.Any(i => i.Keys == "C"), "通用组应含 C");
+        Check.True(last.Groups[0].Items.Any(i => i.Keys == "S"), "通用组应含 S");
     }
 
     private static void Case09_OnlyForegroundAppEntries()
@@ -406,6 +422,25 @@ internal static class Cases
 
         Check.Equal(1, shows, "修饰键状态被清空后，重新长按应能弹出");
         Check.Equal(HudState.Visible, sm.State, "应进入 Visible");
+    }
+
+    private static void Case19_DesktopNotSuppressed()
+    {
+        // Win+D 之后前台是 Progman：铺满屏幕、无标题栏。若被 D5 当成无边框全屏，
+        // 桌面上长按 Ctrl 就完全没反应（S1-B/S1-E 自检实测踩到）
+        var desktop = new GameSignal(
+            ExclusiveFullscreen: false,
+            CoversWholeMonitor: true,
+            HasCaption: false,
+            ProcessName: "explorer",
+            WindowClass: "Progman",
+            ExecutablePath: @"C://Windows//explorer.exe");
+
+        Check.False(GameClassifier.ShouldSuppress(desktop, null, out _), "桌面不应被抑制");
+
+        // 真正的无边框全屏游戏仍然要抑制
+        var game = desktop with { ProcessName = "game", WindowClass = "GameWnd" };
+        Check.True(GameClassifier.ShouldSuppress(game, null, out _), "无边框全屏游戏仍应抑制");
     }
 
     private static void Case18_UnrecordedGuidance()

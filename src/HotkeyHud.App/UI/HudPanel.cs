@@ -134,7 +134,7 @@ internal static class HudPanel
         }
         else
         {
-            height += Pack(blocks, model.CellBudget).Rows * RowHeight + FooterHeight;
+            height += Pack(blocks, model.CellBudget, model.Groups.Count > 1).Rows * RowHeight + FooterHeight;
         }
 
         return new Size(width, (int)Math.Ceiling(height * scale));
@@ -189,7 +189,7 @@ internal static class HudPanel
         }
 
         var placed = new List<PlacedItem>(MaxVisibleItems);
-        (List<Cell>[] columns, int rows) = Pack(blocks, model.CellBudget);
+        (List<Cell>[] columns, int rows) = Pack(blocks, model.CellBudget, model.Groups.Count > 1);
         DrawCells(graphics, columns, scale, padX, y, contentWidth, placed);
 
         DrawFooter(graphics, model, scale, padX, y + rows * RowHeight * scale, contentWidth);
@@ -435,7 +435,10 @@ internal static class HudPanel
     /// </summary>
     private static List<Block> BuildBlocks(HudModel model)
     {
-        bool showTitle = model.Groups.Count > 1;
+        // 单组通常不画组名（省一行）。但「通用」页必须画：它整页只有这一组，
+        // 不画就成了一堆没有归属的复制粘贴（§4.3 v1.7 验收要求看到「通用」组名）
+        bool showTitle = model.Groups.Count > 1
+                         || model.DeferredKnownCount > 0;
         int remaining = MaxVisibleItems;
         var blocks = new List<Block>(model.Groups.Count);
 
@@ -464,14 +467,15 @@ internal static class HudPanel
             }
         }
 
-        return SplitOversized(blocks);
+        // 单组页不标「（续）」：整页只有一组，续列没有歧义，标了反而像三个组
+        return SplitOversized(blocks, markContinuation: model.Groups.Count > 1);
     }
 
     /// <summary>
     /// 组块高到会让面板异常高时才拆开，续块加「（续）」（§6.1 v1.2 的兜底条款）。
     /// 常规数据（每组 ≤ 8 格）走不到这里。
     /// </summary>
-    private static List<Block> SplitOversized(List<Block> blocks)
+    private static List<Block> SplitOversized(List<Block> blocks, bool markContinuation)
     {
         var result = new List<Block>(blocks.Count);
 
@@ -492,7 +496,7 @@ internal static class HudPanel
                 var chunk = block.Items.Skip(index).Take(capacity).ToArray();
                 result.Add(new Block(title, chunk));
                 index += chunk.Length;
-                title = block.Title + "（续）";
+                title = markContinuation ? block.Title + "（续）" : null;
             }
         }
 
@@ -503,7 +507,7 @@ internal static class HudPanel
     /// 组块按「当前最短列优先」装填（§6.1 v1.3）。装不下就拆，续块带「组名（续）」
     /// 且紧跟其后——这样不会出现无组名的续列，也不会出现两列半空。
     /// </summary>
-    private static (List<Cell>[] Columns, int Rows) Pack(List<Block> blocks, int cellBudget = 0)
+    private static (List<Cell>[] Columns, int Rows) Pack(List<Block> blocks, int cellBudget = 0, bool markContinuation = true)
     {
         int total = 0;
         foreach (Block block in blocks)
@@ -511,123 +515,125 @@ internal static class HudPanel
             total += block.Height;
         }
 
-        // 多页时面板高度必须固定，否则翻页会重建 DIB 并闪一下（§6.1）
-        int capacity = Math.Max(RowsOf(total), RowsOf(cellBudget));
+        // 窗口高度（行数）由预算决定：多页时必须固定，否则翻页会重建 DIB 并闪一下（§6.1）
+        int windowRows = Math.Max(RowsOf(total), RowsOf(cellBudget));
+
+        // 但**内容**按本页实际格数均衡铺满三列——直接用 windowRows 当列高，
+        // 内容少的页会只填满两列、第三列整列空着（Word 第 1 页实测）
+        int columnRows = Math.Max(1, RowsOf(total));
         while (true)
         {
-            (List<Cell>[] Columns, int Rows)? packed = TryPack(blocks, capacity);
+            (List<Cell>[] Columns, int Rows)? packed = TryPack(blocks, columnRows, markContinuation);
             if (packed is not null)
             {
-                // 多页时按预算留白：内容少也要占满预算行数，否则翻页会改变窗口高度
-                return (packed.Value.Columns, Math.Max(packed.Value.Rows, capacity));
+                return (packed.Value.Columns, Math.Max(windowRows, packed.Value.Rows));
             }
 
-            capacity++;
+            columnRows++; // 装填有浪费时抬高列高重试，窗口高度仍取预算
         }
     }
 
-    private static (List<Cell>[] Columns, int Rows)? TryPack(List<Block> blocks, int capacity)
+    /// <summary>
+    /// 顺序装列：先填满第 1 列再换列，绝不「挑最短的列先填」。
+    /// <para>
+    /// v1.3 的「最短列优先」会把一组的续块塞回前面的空列——实测 Word 出现
+    /// 「段落（续）」排在「段落」左边的乱序。顺序优先于平衡：列高差由容量统一保证，
+    /// 不靠挑列来凑。
+    /// </para>
+    /// </summary>
+    private static (List<Cell>[] Columns, int Rows)? TryPack(
+        List<Block> blocks, int capacity, bool markContinuation)
     {
         var columns = new List<Cell>[Columns];
-        var heights = new int[Columns];
-        var full = new bool[Columns];
         for (int i = 0; i < Columns; i++)
         {
             columns[i] = new List<Cell>(capacity);
         }
 
-        var pending = new List<Block>(blocks);
-        while (pending.Count > 0)
+        int column = 0;
+        int used = 0;
+        int index = 0;
+        var carry = new List<Block>(); // 被拆出的续块 / 需要换列重试的块
+
+        while (index < blocks.Count || carry.Count > 0)
         {
-            int target = ShortestColumn(heights, full);
-            if (target < 0)
+            Block block;
+            if (carry.Count > 0)
             {
-                return null; // 三列都满了还装不下，抬高 capacity 重试
+                block = carry[0];
+                carry.RemoveAt(0);
+            }
+            else
+            {
+                block = blocks[index];
+                index++;
             }
 
-            Block block = pending[0];
-            int remaining = capacity - heights[target];
+            if (used >= capacity)
+            {
+                column++;
+                used = 0;
+                if (column >= Columns)
+                {
+                    return null; // 三列都满了还装不下，抬高 capacity 重试
+                }
+            }
+
+            int remaining = capacity - used;
             int titleCells = block.Title is null ? 0 : 1;
 
             if (block.Height <= remaining)
             {
-                Append(columns[target], block);
-                heights[target] += block.Height;
-                pending.RemoveAt(0);
+                Append(columns[column], block);
+                used += block.Height;
                 continue;
             }
 
-            // §6 v1.4 不变量：同一组最多跨 2 列。已经是续块就不再拆，
-            // 整块塞进当前列——列会变高、平衡变差，但不变量优先。
-            if (IsContinuation(block.Title))
-            {
-                Append(columns[target], block);
-                heights[target] += block.Height;
-                pending.RemoveAt(0);
-                full[target] = true;
-                continue;
-            }
-
-            // 剩余空间连「组名 + 1 条」都放不下：这一列就此封口
+            // 剩余空间连「组名 + 1 条」都放不下：整块换到下一列，不硬拆
             if (remaining < titleCells + 1)
             {
-                full[target] = true;
+                column++;
+                used = 0;
+                if (column >= Columns)
+                {
+                    return null;
+                }
+
+                carry.Insert(0, block);
                 continue;
             }
 
             int itemCount = remaining - titleCells;
             var chunk = new Block(block.Title, block.Items.Take(itemCount).ToArray());
-            Append(columns[target], chunk);
-            heights[target] += chunk.Height;
-            pending.RemoveAt(0);
+            Append(columns[column], chunk);
+            used += chunk.Height;
 
             HudItem[] rest = block.Items.Skip(itemCount).ToArray();
             if (rest.Length > 0)
             {
-                pending.Insert(0, new Block(ContinueTitle(block.Title), rest));
+                carry.Insert(0, new Block(markContinuation ? ContinueTitle(block.Title) : null, rest));
             }
-
-            full[target] = true;
         }
 
         int rows = 0;
         for (int i = 0; i < Columns; i++)
         {
-            rows = Math.Max(rows, heights[i]);
+            rows = Math.Max(rows, columns[i].Count);
         }
 
         return (columns, rows);
     }
 
-    private static int ShortestColumn(int[] heights, bool[] full)
-    {
-        int best = -1;
-        for (int i = 0; i < heights.Length; i++)
-        {
-            if (full[i])
-            {
-                continue;
-            }
-
-            if (best < 0 || heights[i] < heights[best])
-            {
-                best = i;
-            }
-        }
-
-        return best;
-    }
-
-    private static void Append(List<Cell> column, Block block)
+    private static void Append(List<Cell> cells, Block block)
     {
         if (block.Title is not null)
         {
-            column.Add(Cell.Title(block.Title));
+            cells.Add(Cell.Title(block.Title));
         }
 
         foreach (HudItem item in block.Items)
         {
-            column.Add(Cell.Entry(item));
+            cells.Add(Cell.Entry(item));
         }
     }
 

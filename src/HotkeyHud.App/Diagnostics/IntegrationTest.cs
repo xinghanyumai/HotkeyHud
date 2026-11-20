@@ -18,6 +18,7 @@ internal static class IntegrationTest
 {
     private const int VkControl = 0x11;
     private const int VkC = 0x43;
+    private const int VkB = 0x42;
     private const int VkK = 0x4B;
     private const int IdleSampleMs = 10_000;
     private const int CpuBudgetMs = 100;
@@ -122,27 +123,38 @@ internal static class IntegrationTest
             return "Ctrl 累计按住 620ms，面板从未出现";
         });
 
-        Case("Case05 熟记组合立即收起、非熟记组合高亮", () =>
+        Case("Case05 熟记组合与普通组合同样高亮（v1.7 降权不剔除）", () =>
         {
             PressAndArm(hud, target.Handle);
             PumpTracking(550, hud);
             Require(hud.IsOverlayVisible,
                 $"前置条件不成立：面板未显示（State={hud.State}，计时器={hud.TimerRunning}）");
 
-            // 熟记组合：立即收起，不进入闪烁
-            KeyDown(VkC);
-            Pump(40);
-            KeyUp(VkC);
-            Require(!hud.IsOverlayVisible, "按 Ctrl+C 后面板未立即收起（熟记名单未作用于闪烁路径）");
+            // 熟记组合 Ctrl+B：v1.7 起不再「立即收起」，走与普通组合相同的高亮路径
+            var before = PanelRect(hud);
+            KeyDown(VkB);
+            Pump(80);
+            KeyUp(VkB);
 
-            // 非熟记组合：高亮，且不得改变面板尺寸
+            Require(hud.IsOverlayVisible, "按 Ctrl+B 后面板应收起为高亮态，而不是消失");
+            Require(hud.HighlightedCombo == new Combo(Modifier.Ctrl, VkB),
+                $"高亮组合不符：{hud.HighlightedCombo?.ToString() ?? "null"}");
+
+            var afterKnown = PanelRect(hud);
+            Require(before == afterKnown,
+                $"熟记组合高亮改变了面板尺寸：{before} → {afterKnown}（会重建 DIB 并闪烁）");
+
+            Pump(550);
+            Require(!hud.IsOverlayVisible, "闪烁 500ms 后面板应自动收起");
             KeyUp(VkControl);
             Pump(150);
+
+            // 非熟记组合 Ctrl+K：行为与上面完全一致
             PressAndArm(hud, target.Handle);
             PumpTracking(550, hud);
             Require(hud.IsOverlayVisible, "前置条件不成立：面板未重新显示");
 
-            var before = PanelRect(hud);
+            var beforeK = PanelRect(hud);
             KeyDown(VkK);
             Pump(80);
             KeyUp(VkK);
@@ -151,16 +163,16 @@ internal static class IntegrationTest
             Require(hud.HighlightedCombo == new Combo(Modifier.Ctrl, VkK),
                 $"高亮组合不符：{hud.HighlightedCombo?.ToString() ?? "null"}");
 
-            var after = PanelRect(hud);
-            Require(before == after,
-                $"高亮改变了面板尺寸：{before} → {after}（会重建 DIB 并闪烁）");
+            var afterK = PanelRect(hud);
+            Require(beforeK == afterK,
+                $"高亮改变了面板尺寸：{beforeK} → {afterK}（会重建 DIB 并闪烁）");
 
             Pump(550);
             Require(!hud.IsOverlayVisible, "闪烁 500ms 后面板应自动收起");
             KeyUp(VkControl);
             Pump(150);
 
-            return $"Ctrl+C 立即收起；Ctrl+K 高亮 {after.Width}×{after.Height} 尺寸不变，500ms 后收起";
+            return $"Ctrl+B / Ctrl+K 均高亮 {afterK.Width}×{afterK.Height} 尺寸不变，500ms 后收起";
         });
 
         Case("Case06 前台切换立即收起面板", () =>
@@ -346,7 +358,7 @@ internal static class IntegrationTest
               "shortcuts": [
                 { "keys": "Ctrl+K", "action": "测试动作 K" },
                 { "keys": "Ctrl+J", "action": "测试动作 J" },
-                { "keys": "Ctrl+B", "action": "加粗（熟记名单内，应被剔除）" }
+                { "keys": "Ctrl+B", "action": "加粗（熟记名单内，v1.7 降权到通用组）" }
               ]
             }
             """;

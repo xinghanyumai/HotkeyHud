@@ -46,8 +46,30 @@ public static class GameClassifier
         @"\battle.net\",
     };
 
+    // 桌面外壳的窗口类。Win+D 之后前台就是它——铺满屏幕、无标题栏，
+    // 不排除的话 D5 会把桌面当成无边框全屏游戏，在桌面上长按修饰键完全没反应。
+    private static readonly string[] DesktopShellClasses =
+    {
+        "Progman",
+        "WorkerW",
+        "Shell_TrayWnd",
+    };
+
     public static bool ShouldSuppress(in GameSignal signal, GameRules? rules, out string reason)
     {
+        // 桌面不是游戏：先排除，否则 Win+D 之后 HUD 会「假死」
+        if (!string.IsNullOrEmpty(signal.WindowClass))
+        {
+            foreach (string windowClass in DesktopShellClasses)
+            {
+                if (string.Equals(signal.WindowClass, windowClass, StringComparison.Ordinal))
+                {
+                    reason = string.Empty;
+                    return false;
+                }
+            }
+        }
+
         // D1 系统自己都认为处于全屏/演示状态
         if (signal.ExclusiveFullscreen)
         {

@@ -60,7 +60,7 @@ src/HotkeyHud.App/
   Diagnostics/                自检、集成测试、渲染画廊，仅 Debug 构建编译
   HudApp.cs                   编排：Raw Input → 状态机 → 覆盖窗
   Program.cs                  入口 + 严格参数解析 + 崩溃日志
-tests/HotkeyHud.Tests/        §7 的 16 条规则用例 + Case17
+tests/HotkeyHud.Tests/        §7 的 16 条规则用例 + Case17–19
 ```
 
 ## 构建与运行
@@ -164,19 +164,29 @@ S1 立下的规矩是「不监听、不拦截、不抢焦点」。S7 起有**一
 
 | 应用 | 文档 URL | 核对日期 | 核对人 | 条数 |
 |---|---|---|---|---|
-| Word | https://support.microsoft.com/en-us/office/keyboard-shortcuts-in-word-95ef89dd-7142-4b50-afb2-f762f663ceb2 | 2026-11-19 | 执行 Agent | 27 |
-| Chrome | https://support.google.com/chrome/answer/157179?hl=en&co=GENIE.Platform%3DDesktop | 2026-11-19 | 执行 Agent | 21 |
-| Edge | https://support.microsoft.com/zh-cn/microsoft-edge/microsoft-edge-键盘快捷方式-d356f99b-7fb4-7a30-f837-c5a35fd7cd1d | 2026-11-19 | 执行 Agent | 28 |
-| VS Code | https://code.visualstudio.com/docs/reference/default-keybindings | 2026-11-19 | 执行 Agent | 27 |
-| 文件资源管理器 | https://support.microsoft.com/en-us/windows/keyboard-shortcuts-in-windows-dcc61a57-8ff0-cffe-9796-cb9706c75eec | 2026-11-19 | 执行 Agent | 17 |
-| 记事本 | 同上页面的「Text editing shortcuts」章节（微软未提供记事本专属快捷键页） | 2026-11-19 | 执行 Agent | 12 |
-| Windows（`_system.json`） | 同上页面 + 「Text editing shortcuts」章节 | 2026-11-19 | 执行 Agent | 52 |
+| Word | https://support.microsoft.com/en-us/office/keyboard-shortcuts-in-word-95ef89dd-7142-4b50-afb2-f762f663ceb2 | 2026-11-20 | 执行 Agent | 26 |
+| Chrome | https://support.google.com/chrome/answer/157179?hl=en&co=GENIE.Platform%3DDesktop | 2026-11-20 | 执行 Agent | 21 |
+| Edge | https://support.microsoft.com/zh-cn/microsoft-edge/microsoft-edge-键盘快捷方式-d356f99b-7fb4-7a30-f837-c5a35fd7cd1d | 2026-11-20 | 执行 Agent | 28 |
+| VS Code | https://code.visualstudio.com/docs/reference/default-keybindings | 2026-11-20 | 执行 Agent | 27 |
+| 文件资源管理器 | https://support.microsoft.com/en-us/windows/keyboard-shortcuts-in-windows-dcc61a57-8ff0-cffe-9796-cb9706c75eec | 2026-11-20 | 执行 Agent | 17 |
+| 记事本 | 同上页面的「Text editing shortcuts」章节（微软未提供记事本专属快捷键页） | 2026-11-20 | 执行 Agent | 12 |
+| Windows（`_system.json`） | 同上页面 + 「Text editing shortcuts」章节 | 2026-11-20 | 执行 Agent | 64 |
 
 **未收录：微信 / QQ / 网易云音乐 / 豆包。** 这四家都没有公开的快捷键文档页——腾讯客服站
 （`kf.qq.com`）只有聊天记录、登录、账号类条目，网易云与豆包同样没有官方键位表；网上能找到的
 全是第三方教程（百度经验/知乎/下载站），按「禁止凭印象写键位」的规矩不能作为来源。
-它们现在走未收录空态引导（见下）。若要把它们收录进来，唯一可信来源是应用内
-`设置 → 快捷键` 面板——需要一次人工抄录或截图核对。
+
+应用内 `设置 → 快捷键` 也逐个试过（S7 返工第二轮，Computer Use）：
+
+| 应用 | 进程名 | 卡在哪 |
+|---|---|---|
+| 微信 | `Weixin.exe` | 启动后停在「进入微信」登录确认页；页面右上角齿轮只打开**网络代理设置**，快捷键页在登录后的主界面里 |
+| QQ | `QQ.exe` | 未运行，启动即要求登录 |
+| 网易云音乐 | `cloudmusic.exe` | 未登录态下主界面右上角只有 消息 / 勋章 / 主题 / 窗口按钮，左侧无菜单；`设置` 入口不可达（误触进了迷你播放器） |
+| 豆包 | `Doubao.exe` | 未找到快捷键设置页 |
+
+四家都**没有抄到一条**，所以没有新增档案、`docs/evidence/` 也没有截图——按「截图里没有的一条都不加」，
+这比编一份看起来完整的档案更安全。要补的话，最省事的路径是登录后截一张 `设置 → 快捷键` 的图给我。
 
 核对方式与已知限制：
 
@@ -192,6 +202,18 @@ S1 立下的规矩是「不监听、不拦截、不抢焦点」。S7 起有**一
   （键位解析器只认字符键，`Plus` 不是合法键名）。
 - **系统档案 `_system.json` 用 `processNames: ["*"]` 通配**，不计入 `ProfileCount`；
   应用档案已有同一组合时按组合去重，不会出现两个同名键帽。
+
+### 排序、分页与「通用」组（v1.7）
+
+| 规则 | 做法 | 为什么 |
+|---|---|---|
+| 排序 | **组优先**：按档案里的组顺序，组内按修饰键数量升序 | v1.5 的「全局按修饰键数」把同一组打散，Word 第 1 页出现 5 个组名 |
+| 分页 | **按组对齐**：整组装得下就整组放，装不下就换页 | 「凑满 12 条」会横跨 3 个组，再被列宽切成「字体 / 字体（续）/ 段落 / 段落（续）」 |
+| 通用组 | 命中熟记名单的组合**不剔除**，归入「通用」组，**强制另起一页**排最后 | 用户要求 Ctrl+C/V/Z 能看到；放首页又会把应用特有快捷键挤到第 2 页 |
+| 单组页 | 整页只有一组时不标「（续）」 | 续列没有歧义，标了反而像三个组（Word 最后一页实测） |
+| 列装填 | **顺序装列**（填满第 1 列再换列），不再「最短列优先」 | 最短列优先会把一组的续块塞回前面的空列，出现「段落（续）」排在「段落」左边的乱序 |
+
+效果（Word，Ctrl，38 条）：第 1 页 `插入 / 字体 / 字体（续）` = **3 个组名**，共 5 页，最后一页是「通用」。
 
 ### 未收录应用的空态
 
@@ -260,7 +282,7 @@ $ dotnet run --project tests/HotkeyHud.Tests
 [PASS] Case05 取消后全部松开再长按仍能弹出
 [PASS] Case06 面板显示时按 Ctrl+C 立即收起且不高亮
 [PASS] Case07 面板显示时按 Ctrl+K 高亮并 500ms 后收起
-[PASS] Case08 熟记名单同时作用于列表与计数
+[PASS] Case08 熟记条目降权到「通用」组并排最后
 [PASS] Case09 只显示当前应用条目
 [PASS] Case10 未收录应用不混入其他条目
 [PASS] Case11 双修饰键条目不出现在单修饰键面板
@@ -275,7 +297,7 @@ $ dotnet run --project src/HotkeyHud.App -- --integration-test
 [PASS] Case02 按住 400ms 面板出现且标题正确 — label="HudTestApp · 2 条 Ctrl 快捷键"
 [PASS] Case03 松开触发键面板消失 — 可见=False
 [PASS] Case04 短按组合全程不弹面板 — Ctrl 累计按住 460ms，面板从未出现
-[PASS] Case05 熟记组合立即收起、非熟记组合高亮 — Ctrl+C 立即收起；Ctrl+K 高亮显示动作并 500ms 后收起
+[PASS] Case05 熟记组合与普通组合同样高亮（v1.7）— Ctrl+B / Ctrl+K 均高亮，500ms 后收起
 [PASS] Case06 前台切换立即收起面板 — 切换后 200ms 内已收起
 [PASS] Case07 未收录应用显示「未收录」 — label="未收录 HotkeyHud.App.exe"
 [PASS] Case08 手动暂停时长按不弹面板 — 期间收到 1 个输入事件，面板从未出现
@@ -428,6 +450,23 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 18. **`_system.json` 不计入 `ProfileCount`**：它用 `processNames: ["*"]` 通配，单独收在
     `ShortcutRepository.SystemProfile`，所以画廊的「6 份档案」断言仍成立。
 19. **不支持 Fn**：硬件限制，见「已知限制：不支持 Fn」，代码里不留占位。
+20. **分页改为「按组对齐」，一页可能不足 12 条**（§3.2 v1.7 配套）：整组装不下就换页，
+    Word 第 1 页只有 9 条而不是 12 条。换来的是「组名 ≤ 3」与「同组连续」——
+    凑满 12 条必然把组切碎，两条要求在 12 条/页下互斥。
+21. **列装填从「最短列优先」改回「顺序装列」**（S5 曾为平衡改成最短列）：最短列优先会把一组的
+    续块塞回前面的空列，Word 实测出现「段落（续）」排在「段落」左边。顺序优先于平衡，
+    列高差由统一容量保证。
+22. **整页只有一组时不标「（续）」**：Word 最后一页（通用组）原本显示
+    `通用 / 通用（续）/ 通用（续）` 三行标题。单组页的续列没有歧义，标了反而像三个组。
+23. **微信 / QQ / 网易云 / 豆包 未收录**：无官方文档，应用内设置页也进不去（需登录），
+    见「应用档案核对表」下的表格。**没有一条是凭印象补的。**
+24. **桌面不算游戏**（S7 返工 2 的附带修复）：`Win+D` 之后前台是 `Progman`——铺满屏幕、无标题栏，
+    D5 会把它当无边框全屏，于是在桌面上长按修饰键完全没反应。`GameClassifier` 现在先排除
+    `Progman` / `WorkerW` / `Shell_TrayWnd` 三个外壳窗口类。Case19 锁定该行为，
+    S1-B / S1-E 自检在「桌面在前台」这个状态下也恢复通过。
+25. **多页时的窗口高度 = 格数预算 + 3 格装填余量**：顺序装列在一组卡到列尾时会浪费 1–2 格，
+    不给余量的话同一模型的某页会多出一行（翻页时窗口高度变化，P2 实测 496→444）。
+    余量只抬窗口高度，**内容按本页实际格数均衡铺三列**——否则内容少的页会整列空着。
 
 非偏差，但需要记录的实现决定：
 
@@ -480,5 +519,6 @@ $ dotnet run --project src/HotkeyHud.App -- --selftest
 | S5 托盘 / 配置 / 自启 | 通过（含 2 项整改） |
 | S6 打磨（混合 DPI / 上缘翻转 / 淡入） | 通过（含 2 项整改） |
 | S7 覆盖度 + 分页 | 通过（含 1 项返工） |
-| S7 返工（诊断日志 / 空态引导 / 系统档案 / Edge） | 完成（Word 未复现原故障，证据见交付说明） |
+| S7 返工（诊断日志 / 空态引导 / 系统档案 / Edge） | 通过（含 3 项返工） |
+| S7 返工 2（组优先排序 / 通用组降权 / 分页按组对齐 / 桌面不算游戏） | 完成（4 个应用未抄录，见上表） |
 | 发布准备（签名 / 安装包 / 用户 README） | 未开始 |

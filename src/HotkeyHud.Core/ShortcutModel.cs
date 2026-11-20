@@ -52,7 +52,8 @@ public sealed class HudModel
     /// <summary>过滤后的可见条目总数（跨页合计）。</summary>
     public int TotalCount { get; init; }
 
-    public int HiddenByKnownCount { get; init; }
+    /// <summary>被熟记名单降权到「通用」组的条数（§4.3 v1.7：不是隐藏，是降权）。</summary>
+    public int DeferredKnownCount { get; init; }
 
     public bool HasProfile { get; init; }
 
