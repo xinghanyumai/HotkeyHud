@@ -4,5 +4,6 @@ obj/
 *.user
 *.suo
 .workbuddy-ai/
-# 发布产物（体积 50 MB，不进仓库）
+# 发布产物（体积 50 MB，不进仓库；dist-nocompress 是体积对比用的未压缩版）
 dist/
+dist-*/
