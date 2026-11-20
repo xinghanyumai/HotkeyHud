@@ -104,9 +104,11 @@ internal sealed class SettingsForm : Form
         _items.FullRowSelect = true;
         _items.HideSelection = false;
         _items.MultiSelect = false;
-        _items.Columns.Add("键位", 150);
-        _items.Columns.Add("动作", 300);
-        _items.Columns.Add("颜色", 70);
+        // 键位是面板的核心信息，不能截断：Ctrl+Backspace 这类最长约 14 字符，
+        // 160 逻辑像素够放；动作列自适应剩余宽度（-2）
+        _items.Columns.Add("键位", 170);
+        _items.Columns.Add("动作", -2);
+        _items.Columns.Add("颜色", 80);
         _items.SelectedIndexChanged += (_, _) => OnRowSelected();
 
         var editor = BuildEditor();

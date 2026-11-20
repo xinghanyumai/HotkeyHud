@@ -79,57 +79,40 @@ dotnet run --project src/HotkeyHud.App
 
 F9 手动开关已在 S2.5 移除——它会和状态机抢状态。
 
-## 验证
+## 验证（九项门禁）
+
+| # | 套件 | 命令 | 当前 |
+|---|---|---|---|
+| ① | 规则用例（§7） | `dotnet run --project tests/HotkeyHud.Tests` | 22/22 |
+| ② | 集成（Raw Input → 状态机 → 覆盖窗） | `... -- --integration-test` | 10/10 |
+| ③ | 渲染画廊（截图 / 高亮不改尺寸 / p95） | `... -- --render-gallery --out=<目录>` | 8/8 |
+| ④ | 抑制（全屏 / 平台目录 / 采集开销） | `... -- --suppression-test` | 6/6 |
+| ⑤ | 外壳（托盘 / 暂停 / 配置 / 自启 / 单实例 / 设置页） | `... -- --shell-test` | 12/12 |
+| ⑥ | 打磨（混合 DPI / 上缘翻转 / 淡入） | `... -- --s6-test --out=<目录>` | 6/6 |
+| ⑦ | 分页（页脚 / 翻页 / 钩子 / 安全阀 / P7 / P8） | `... -- --paging-test --out=<目录>` | 8/8 |
+| ⑧ | 自检（覆盖窗四条硬指标 / Raw Input / 内存） | `... -- --selftest` | 8/8 |
+| ⑨ | 输入冒烟（进程内打字，跨进程待人工复核） | `... -- --typing-test --seconds=60` | 见输出 |
+
+全部以退出码表示失败数（0 = 全部通过）。上面 `...` 指 `dotnet run --project src/HotkeyHud.App`。
+
+**连跑约定**：抢前台的套件（②④⑤⑦）启动前会等前台连续 3 次采样不变（最多 1 秒），
+单个用例失败会自动重试一次并在报告里标「（重试 1 次）」。**不用固定 Sleep**——慢机器上照样会红。
+
+`--selftest` / `--integration-test` / `--render-gallery` / `--suppression-test` / `--typing-test` /
+`--paging-test` / `--s6-test` / `--shell-test` / `--diag` / `--screen-shot` / `--adapter-check` /
+`--template-preview` / `--settings-demo` / `--demo` 只在 Debug 构建存在，Release 下传入会以退出码 2
+报错；未知参数与空格分隔的 `--capture path` 同样报错退出，不会静默忽略。
+
+附：诊断入口（不属于门禁）
 
 ```bash
-# ① §7 的 15 条规则用例（唯一验收凭据）
-dotnet run --project tests/HotkeyHud.Tests
-
-# ② S2.5 集成验收：真实注入按键，走 Raw Input → 状态机 → 覆盖窗全链路
-dotnet run --project src/HotkeyHud.App -- --integration-test
-
-# ③ S3 渲染验收：输出 4 张面板截图 + 断言高亮不改尺寸、渲染 p95
-dotnet run --project src/HotkeyHud.App -- --render-gallery --out=<目录>
-
-# ④ S4 抑制验收：真机开全屏窗口，验证不弹面板 + 采集开销
-dotnet run --project src/HotkeyHud.App -- --suppression-test --out=<目录>
-
-# ⑤ S5 外壳验收：托盘菜单 / 暂停 / 配置生效 / 配置损坏 / 自启 / 单实例
-dotnet run --project src/HotkeyHud.App -- --shell-test
-
-# ⑥ S6 打磨验收：混合 DPI 逻辑 / 上缘翻转 / 淡入 / 立即隐藏
-dotnet run --project src/HotkeyHud.App -- --s6-test --out=<目录>
-
-# ⑦ S7 分页验收：页脚 / 翻页 / 边界 / 钩子装卸 / 15 秒安全阀
-dotnet run --project src/HotkeyHud.App -- --paging-test --out=<目录>
-
-# 附：钩子前提实验（吞掉后 Raw Input 是否仍收到）与图标生成
-dotnet run --project src/HotkeyHud.App -- --hook-probe
-dotnet run --project src/HotkeyHud.App -- --make-icon --out=<目录>
-
-# 附：诊断日志（判定链逐条落盘到 %TEMP%\hotkeyhud-show.log，Release 不输出）
-dotnet run --project src/HotkeyHud.App -- --diag
-
-# 附：用真实 %APPDATA% 跑一遍适配器（验收「读得出用户改过的键位」用）
-dotnet run --project src/HotkeyHud.App -- --adapter-check
-
-# 附：设置页自检（打印打开前后的私有工作集，10 秒后自动关闭）
-dotnet run --project src/HotkeyHud.App -- --settings-demo
-
-# 附：整屏截图（PerMonitorV2，物理像素；面板叠在真实应用上的证据靠它）
-dotnet run --project src/HotkeyHud.App -- --screen-shot=%TEMP%\shot.png
-
-# ⑧ S1 回归门禁：覆盖窗四条硬指标 + Raw Input 通路 + 内存三口径
-dotnet run --project src/HotkeyHud.App -- --selftest
-
-# ⑨ 进程内输入通路冒烟（跨进程真实键盘打字待人工复核，见「偏差」）
-dotnet run --project src/HotkeyHud.App -- --typing-test --seconds=60
+... -- --hook-probe                 # 钩子前提实验：吞掉后 Raw Input 是否仍收到
+... -- --diag                       # 判定链逐条落盘 %TEMP%\hotkeyhud-show.log
+... -- --adapter-check              # 用真实 %APPDATA% 跑 VS Code / JetBrains 适配器
+... -- --settings-demo              # 设置页自检（打印内存增量，10 秒自动关）
+... -- --make-icon --out=<目录>      # 生成多尺寸图标
+... -- --screen-shot=%TEMP%\a.png    # 整屏截图（PerMonitorV2，物理像素）
 ```
-
-全部以退出码表示失败数（0 = 全部通过）。`--selftest` / `--integration-test` / `--render-gallery` /
-`--suppression-test` / `--typing-test` / `--paging-test` / `--diag` / `--screen-shot` / `--demo`
-只在 Debug 构建存在，Release 下传入会以退出码 2 报错；未知参数与空格分隔的 `--capture path`
-同样报错退出，不会静默忽略。
 
 **`--integration-test` / `--suppression-test` / `--shell-test` 会抢前台**：它们自己创建窗口并 `SetForegroundWindow`，
 运行期间不要操作电脑，否则用例会以「无法把目标窗口切到前台」失败。

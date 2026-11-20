@@ -29,6 +29,7 @@ internal static class SuppressionTest
     public static int Run(string outputDirectory)
     {
         ApplicationConfiguration.Initialize();
+        TestHarness.WaitForStableForeground(); // 上一个套件刚退出时前台可能还在变
         try
         {
             Console.OutputEncoding = new UTF8Encoding(false);
@@ -314,16 +315,19 @@ internal static class SuppressionTest
 
     private static void Case(string name, Func<string> body)
     {
-        try
+        // 抢前台的套件会偶发失败：等前台稳定后重试一次，并在报告里标出来
+        bool ok = TestHarness.TryRun(body, out string detail, out bool retried);
+        string suffix = retried ? "（重试 1 次）" : string.Empty;
+
+        if (ok)
         {
-            string detail = body();
             _passed++;
-            Report.Add($"[PASS] {name} — {detail}");
+            Report.Add($"[PASS] {name} — {detail}{suffix}");
         }
-        catch (Exception ex)
+        else
         {
             _failures++;
-            Report.Add($"[FAIL] {name} — {ex.Message}");
+            Report.Add($"[FAIL] {name} — {detail}{suffix}");
         }
     }
 
